@@ -2,28 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
+    <string>BitcoinPriceTracker</string>
     <key>CFBundleIdentifier</key>
     <string>com.crypto.pricetracker</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
     <key>CFBundleName</key>
     <string>Crypto Price Tracker</string>
     <key>CFBundleDisplayName</key>
     <string>Crypto Price Tracker</string>
-    <key>CFBundlePackageType</key>
-    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2024 Crypto Price Tracker. All rights reserved.</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSAppTransportSecurity</key>
@@ -70,5 +64,7 @@
             </dict>
         </dict>
     </dict>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Crypto Price Tracker. All rights reserved.</string>
 </dict>
 </plist>

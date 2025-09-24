@@ -37,6 +37,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <string>Crypto Price Tracker</string>
     <key>CFBundleDisplayName</key>
     <string>Crypto Price Tracker</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>
@@ -60,7 +62,25 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
                 <key>NSExceptionRequiresForwardSecrecy</key>
                 <false/>
             </dict>
+            <key>fapi.binance.com</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+            </dict>
             <key>stream.binance.com</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+            </dict>
+            <key>fstream.binance.com</key>
             <dict>
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <false/>
@@ -94,20 +114,33 @@ fi
 
 echo "🎨 Adding app icon..."
 
-# Copy app icon if available
-if [ -f "Assets.xcassets/AppIcon.appiconset/icon_512x512.png" ]; then
-    cp "Assets.xcassets/AppIcon.appiconset/icon_512x512.png" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-else
-    echo "⚠️  App icon not found, creating placeholder..."
-    # Create a simple placeholder icon
-    python3 -c "
+# Build a proper .icns from the app icon set if possible
+ICONSET_TEMP_DIR="$BUILD_DIR/AppIcon.iconset"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+if command -v iconutil >/dev/null 2>&1; then
+    mkdir -p "$ICONSET_TEMP_DIR"
+    # Copy existing app icon PNGs into an .iconset folder
+    cp Assets.xcassets/AppIcon.appiconset/icon_*.png "$ICONSET_TEMP_DIR" 2>/dev/null || true
+    if [ -n "$(ls -1 "$ICONSET_TEMP_DIR"/icon_*.png 2>/dev/null)" ]; then
+        iconutil -c icns "$ICONSET_TEMP_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns" || true
+    fi
+fi
+
+# Fallback: if no .icns produced, at least copy a large PNG
+if [ ! -f "$APP_BUNDLE/Contents/Resources/AppIcon.icns" ]; then
+    if [ -f "Assets.xcassets/AppIcon.appiconset/icon_512x512.png" ]; then
+        cp "Assets.xcassets/AppIcon.appiconset/icon_512x512.png" "$APP_BUNDLE/Contents/Resources/AppIcon.png"
+    else
+        echo "⚠️  App icon not found, creating placeholder..."
+        python3 -c "
 from PIL import Image, ImageDraw
-img = Image.new('RGB', (512, 512), '#F7931A')
+img = Image.new('RGB', (512, 512), '#444')
 draw = ImageDraw.Draw(img)
-draw.ellipse([50, 50, 462, 462], fill='#F7931A', outline='#E6851F', width=10)
-draw.text((220, 220), '₿', fill='white')
+draw.text((200, 230), 'APP', fill='white')
 img.save('$APP_BUNDLE/Contents/Resources/AppIcon.png')
-" 2>/dev/null || echo "Could not create icon"
+" 2>/dev/null || true
+    fi
 fi
 
 # Set executable permissions

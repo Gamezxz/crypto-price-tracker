@@ -25,9 +25,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var statusItem: NSStatusItem?
     var webSocketTask: URLSessionWebSocketTask?
+    var webSocketTaskFutures: URLSessionWebSocketTask?
     var cryptocurrencies: [String: CryptoCurrency] = [:]
-    var selectedCrypto: String = "BTCUSDT"
+    // Multi-select up to 3
+    var selectedCryptos: [String] = ["BTCUSDT"]
+    // Backward-compat: first selected as primary
+    var selectedCrypto: String { selectedCryptos.first ?? "BTCUSDT" }
     var reconnectTimer: Timer?
+    var reconnectTimerFutures: Timer?
+    
+    // Binance Futures (USD-M) symbols to track
+    private let futuresSymbols: Set<String> = ["ASTERUSDT"]
     
     private let supportedCryptocurrencies = [
         // Major Cryptocurrencies
@@ -70,7 +78,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "SUSHIUSDT": CryptoCurrency(symbol: "SUSHIUSDT", name: "SushiSwap", emoji: "🍣"),
         "1INCHUSDT": CryptoCurrency(symbol: "1INCHUSDT", name: "1inch", emoji: "📏"),
         "LRCUSDT": CryptoCurrency(symbol: "LRCUSDT", name: "Loopring", emoji: "🔄"),
-        "ENJUSDT": CryptoCurrency(symbol: "ENJUSDT", name: "Enjin", emoji: "🎨")
+        "ENJUSDT": CryptoCurrency(symbol: "ENJUSDT", name: "Enjin", emoji: "🎨"),
+        // Futures: ASTER (USDⓂ perpetual)
+        "ASTERUSDT": CryptoCurrency(symbol: "ASTERUSDT", name: "ASTER", emoji: "🌟"),
+        // Added: Astar (ASTER)
+        // Binance symbol: ASTRUSDT
+        "ASTRUSDT": CryptoCurrency(symbol: "ASTRUSDT", name: "Astar", emoji: "✨")
     ]
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
@@ -80,7 +93,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("📊 Status bar setup complete")
         fetchInitialPrices()
         print("💰 Fetching initial prices...")
-        connectToWebSocket()
+        connectToWebSocket() // Spot
+        connectToFuturesWebSocket() // Futures
         print("🔌 Connecting to WebSocket...")
     }
     
@@ -90,7 +104,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ aNotification: Notification) {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
         reconnectTimer?.invalidate()
+        reconnectTimerFutures?.invalidate()
     }
     
     private func setupStatusBar() {
@@ -98,11 +114,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            let currentCrypto = cryptocurrencies[selectedCrypto]!
-            button.title = "\(currentCrypto.emoji) Loading..."
+            let emojis = selectedCryptos.prefix(3).compactMap { cryptocurrencies[$0]?.emoji }.joined(separator: " ")
+            let prefix = emojis.isEmpty ? "₿" : emojis
+            button.title = "\(prefix) Loading..."
             button.target = self
             button.action = #selector(statusBarButtonClicked)
-            print("✅ Status bar button created with title: \(currentCrypto.emoji) Loading...")
+            print("✅ Status bar button created with title: \(button.title)")
         } else {
             print("❌ Failed to create status bar button!")
         }
@@ -114,9 +131,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenu() {
         let menu = NSMenu()
         
-        // Current selected crypto price
-        let currentCrypto = cryptocurrencies[selectedCrypto]!
-        let currentPriceItem = NSMenuItem(title: "\(currentCrypto.name): Loading...", action: nil, keyEquivalent: "")
+        // Current selected currencies summary
+        let summaryTitle = selectedCryptos.isEmpty ? "Selected: None" : "Selected: \(selectedCryptos.joined(separator: ", "))"
+        let currentPriceItem = NSMenuItem(title: summaryTitle, action: nil, keyEquivalent: "")
         currentPriceItem.tag = 100
         menu.addItem(currentPriceItem)
         
@@ -128,7 +145,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Add menu items for each cryptocurrency
         for (symbol, crypto) in supportedCryptocurrencies.sorted(by: { $0.key < $1.key }) {
-            let cryptoItem = NSMenuItem(title: "\(crypto.emoji) \(crypto.name): Loading...", action: #selector(selectCryptocurrency(_:)), keyEquivalent: "")
+            let cryptoItem = NSMenuItem(title: "\(crypto.emoji) \(crypto.name): Loading...", action: #selector(toggleCryptocurrency(_:)), keyEquivalent: "")
             cryptoItem.target = self
             cryptoItem.tag = symbol.hashValue
             cryptoItem.representedObject = symbol
@@ -157,12 +174,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.menu = menu
     }
     
-    @objc func selectCryptocurrency(_ sender: NSMenuItem) {
-        if let symbol = sender.representedObject as? String {
-            selectedCrypto = symbol
-            updateStatusBarForSelectedCrypto()
-            connectToWebSocket() // Reconnect with new symbol
+    @objc func toggleCryptocurrency(_ sender: NSMenuItem) {
+        guard let symbol = sender.representedObject as? String else { return }
+        if let idx = selectedCryptos.firstIndex(of: symbol) {
+            selectedCryptos.remove(at: idx)
+        } else {
+            if selectedCryptos.count >= 3 {
+                let alert = NSAlert()
+                alert.messageText = "Selection limit reached"
+                alert.informativeText = "You can select up to 3 currencies."
+                alert.alertStyle = .warning
+                alert.runModal()
+            } else {
+                selectedCryptos.append(symbol)
+            }
         }
+        updateStatusBarForSelectedCrypto()
+        updateMenuPrices()
+        connectToWebSocket() // Reconnect Spot
+        connectToFuturesWebSocket() // Reconnect Futures
     }
     
     @objc func statusBarButtonClicked() {
@@ -173,6 +203,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("Manual reconnect requested")
         fetchInitialPrices()
         connectToWebSocket()
+        connectToFuturesWebSocket()
     }
     
     @objc func showAbout() {
@@ -230,45 +261,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         task.resume()
+
+        // Fetch Futures tickers for Futures-only symbols
+        fetchFuturesInitialPrices()
+    }
+
+    private func fetchFuturesInitialPrices() {
+        for symbol in futuresSymbols {
+            guard let url = URL(string: "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)") else { continue }
+            let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                guard let self = self, let data = data, error == nil else {
+                    print("Error fetching futures price for \(symbol): \(error?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let priceString = json["lastPrice"] as? String,
+                           let price = Double(priceString) {
+                            let changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
+                            let change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
+                            DispatchQueue.main.async {
+                                self.cryptocurrencies[symbol]?.price = price
+                                self.cryptocurrencies[symbol]?.change24h = change24h
+                                self.cryptocurrencies[symbol]?.changePercent24h = changePercent
+                                self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                                self.updateUI()
+                            }
+                        }
+                    }
+                } catch {
+                    print("Error parsing futures price JSON for \(symbol): \(error.localizedDescription)")
+                }
+            }
+            task.resume()
+        }
     }
     
     private func connectToWebSocket() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
-        
-        // Create streams for all supported cryptocurrencies
-        let streams = supportedCryptocurrencies.keys.map { symbol in
-            "\(symbol.lowercased())@ticker"
-        }.joined(separator: "/")
-        
-        guard let url = URL(string: "wss://stream.binance.com:9443/stream?streams=\(streams)") else {
-            print("Invalid WebSocket URL")
+
+        // Create streams for Spot-only symbols
+        let spotSymbols = supportedCryptocurrencies.keys.filter { !futuresSymbols.contains($0) }
+        guard !spotSymbols.isEmpty else {
+            print("No spot symbols to subscribe")
             return
         }
-        
+        let streams = spotSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
+
+        guard let url = URL(string: "wss://stream.binance.com:9443/stream?streams=\(streams)") else {
+            print("Invalid WebSocket URL (Spot)")
+            return
+        }
+
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: url)
-        
+
         webSocketTask?.resume()
         receiveMessage()
-        
-        print("WebSocket connecting to Binance for multiple streams...")
+
+        print("WebSocket connecting to Binance Spot for: \(spotSymbols.joined(separator: ", "))")
     }
-    
+
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
             switch result {
             case .failure(let error):
-                print("WebSocket receive error: \(error)")
+                print("WebSocket (Spot) receive error: \(error)")
                 self?.scheduleReconnect()
                 
             case .success(let message):
                 switch message {
                 case .string(let text):
-                    print("Received WebSocket message: \(text)")
+                    print("Received WebSocket message (Spot): \(text)")
                     self?.processBinanceMessage(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        print("Received WebSocket data: \(text)")
+                        print("Received WebSocket data (Spot): \(text)")
                         self?.processBinanceMessage(text)
                     }
                 @unknown default:
@@ -276,6 +344,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 
                 self?.receiveMessage()
+            }
+        }
+    }
+
+    private func connectToFuturesWebSocket() {
+        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
+
+        let futSymbols = futuresSymbols.filter { supportedCryptocurrencies[$0] != nil }
+        guard !futSymbols.isEmpty else {
+            print("No futures symbols to subscribe")
+            return
+        }
+        let streams = futSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
+
+        guard let url = URL(string: "wss://fstream.binance.com/stream?streams=\(streams)") else {
+            print("Invalid WebSocket URL (Futures)")
+            return
+        }
+
+        let session = URLSession(configuration: .default)
+        webSocketTaskFutures = session.webSocketTask(with: url)
+        webSocketTaskFutures?.resume()
+        receiveFuturesMessage()
+
+        print("WebSocket connecting to Binance Futures for: \(futSymbols.joined(separator: ", "))")
+    }
+
+    private func receiveFuturesMessage() {
+        webSocketTaskFutures?.receive { [weak self] result in
+            switch result {
+            case .failure(let error):
+                print("WebSocket (Futures) receive error: \(error)")
+                self?.scheduleReconnectFutures()
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    print("Received WebSocket message (Futures): \(text)")
+                    self?.processBinanceMessage(text)
+                case .data(let data):
+                    if let text = String(data: data, encoding: .utf8) {
+                        print("Received WebSocket data (Futures): \(text)")
+                        self?.processBinanceMessage(text)
+                    }
+                @unknown default:
+                    break
+                }
+                self?.receiveFuturesMessage()
             }
         }
     }
@@ -347,6 +462,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    private func scheduleReconnectFutures() {
+        DispatchQueue.main.async {
+            self.reconnectTimerFutures?.invalidate()
+            self.reconnectTimerFutures = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+                print("Attempting to reconnect Futures WebSocket...")
+                self.connectToFuturesWebSocket()
+            }
+        }
+    }
     
     private func updateUI() {
         updateStatusBarForSelectedCrypto()
@@ -354,32 +479,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func updateStatusBarForSelectedCrypto() {
-        guard let currentCrypto = cryptocurrencies[selectedCrypto] else { return }
-        
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
         formatter.groupingSeparator = ","
         formatter.usesGroupingSeparator = true
+
+        if selectedCryptos.isEmpty { selectedCryptos = ["BTCUSDT"] }
         
-        let priceString = formatter.string(from: NSNumber(value: currentCrypto.price)) ?? "0.00"
-        let changeString = formatPercentChange(currentCrypto.changePercent24h)
-        let displayPrice = "$\(priceString)"
-        
-        if let button = statusItem?.button {
-            button.title = "\(currentCrypto.emoji) \(displayPrice) \(changeString)"
-            print("Status bar updated: \(currentCrypto.emoji) \(displayPrice) \(changeString)")
+        let entries: [String] = selectedCryptos.prefix(3).compactMap { symbol in
+            guard let c = cryptocurrencies[symbol] else { return nil }
+            let priceString = formatter.string(from: NSNumber(value: c.price)) ?? "0.00"
+            let changeString = formatPercentChange(c.changePercent24h)
+            return "\(c.emoji) $\(priceString) \(changeString)"
         }
-        
-        // Update current crypto price in menu
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
-        let timeString = timeFormatter.string(from: currentCrypto.lastUpdate)
-        
+
+        if let button = statusItem?.button {
+            button.title = entries.joined(separator: " | ")
+            print("Status bar updated: \(button.title)")
+        }
+
+        // Update summary line in menu
         if let menu = statusItem?.menu,
            let priceItem = menu.item(withTag: 100) {
-            priceItem.title = "\(currentCrypto.name): \(displayPrice) \(changeString) (Updated: \(timeString))"
+            let summary = selectedCryptos.isEmpty ? "Selected: None" : "Selected: \(selectedCryptos.joined(separator: ", "))"
+            priceItem.title = summary
         }
     }
     
@@ -400,7 +525,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                let crypto = cryptocurrencies[symbol] {
                 let priceString = formatter.string(from: NSNumber(value: crypto.price)) ?? "0.00"
                 let changeString = formatPercentChange(crypto.changePercent24h)
-                let isSelected = symbol == selectedCrypto ? " ✓" : ""
+                let isSelected = selectedCryptos.contains(symbol) ? " ✓" : ""
                 item.title = "\(crypto.emoji) \(crypto.name): $\(priceString) \(changeString)\(isSelected)"
             }
         }

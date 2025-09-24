@@ -2,6 +2,10 @@
 
 A beautiful macOS application that displays real-time Bitcoin price in your status bar.
 
+## 🖼️ Screenshot
+
+![Crypto Price Tracker Screenshot](ss.png)
+
 ## ✨ Features
 
 - **🔴 Real-time price updates** - Live BTC/USDT prices from Binance

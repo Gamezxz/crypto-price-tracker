@@ -113,7 +113,6 @@ Temporary Items
 .apdisk
 
 # Build outputs
-dist/
 build_swift/
 pkg_temp/
 
