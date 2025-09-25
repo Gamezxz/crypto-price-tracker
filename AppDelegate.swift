@@ -479,18 +479,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func updateStatusBarForSelectedCrypto() {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-
         if selectedCryptos.isEmpty { selectedCryptos = ["BTCUSDT"] }
         
         let entries: [String] = selectedCryptos.prefix(3).compactMap { symbol in
             guard let c = cryptocurrencies[symbol] else { return nil }
-            let priceString = formatter.string(from: NSNumber(value: c.price)) ?? "0.00"
+            let priceString = formatPrice(c.price)
             let changeString = formatPercentChange(c.changePercent24h)
             return "\(c.emoji) $\(priceString) \(changeString)"
         }
@@ -513,22 +506,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let allCryptosItem = menu.item(withTitle: "All Cryptocurrencies"),
               let submenu = allCryptosItem.submenu else { return }
         
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        
         for item in submenu.items {
             if let symbol = item.representedObject as? String,
                let crypto = cryptocurrencies[symbol] {
-                let priceString = formatter.string(from: NSNumber(value: crypto.price)) ?? "0.00"
+                let priceString = formatPrice(crypto.price)
                 let changeString = formatPercentChange(crypto.changePercent24h)
                 let isSelected = selectedCryptos.contains(symbol) ? " ✓" : ""
                 item.title = "\(crypto.emoji) \(crypto.name): $\(priceString) \(changeString)\(isSelected)"
             }
         }
+    }
+
+    private func formatPrice(_ price: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.usesGroupingSeparator = true
+
+        let fractionDigits: Int
+        let absolutePrice = abs(price)
+
+        switch absolutePrice {
+        case ..<10:
+            fractionDigits = 4
+        case ..<100:
+            fractionDigits = 3
+        case ..<10_000:
+            fractionDigits = 2
+        default:
+            fractionDigits = 1
+        }
+
+        formatter.minimumFractionDigits = fractionDigits
+        formatter.maximumFractionDigits = fractionDigits
+
+        if let formatted = formatter.string(from: NSNumber(value: price)) {
+            return formatted
+        }
+
+        return String(format: "%.*f", fractionDigits, price)
     }
     
     private func formatPercentChange(_ change: Double) -> String {
