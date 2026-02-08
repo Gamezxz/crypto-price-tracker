@@ -4,7 +4,7 @@ A beautiful macOS status bar application that displays real-time prices for top 
 
 ## 🖼️ Screenshot
 
-![Crypto Price Tracker Screenshot](ss.png)
+![Crypto Price Tracker Screenshot](new_ss.png)
 
 ## ✨ Features
 
@@ -27,8 +27,8 @@ A beautiful macOS status bar application that displays real-time prices for top 
 ### Option 1: Download Ready-to-Use App
 1. Download the latest release from GitHub
 2. Unzip the file
-3. Right-click on "Bitcoin Price Tracker.app" → "Open"
-4. Enjoy live Bitcoin prices in your status bar!
+3. Right-click on "Crypto Price Tracker.app" → "Open"
+4. Enjoy live crypto prices in your status bar!
 
 ### Option 2: Build from Source
 1. Clone this repository
