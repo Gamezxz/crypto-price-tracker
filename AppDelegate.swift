@@ -25,21 +25,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var statusItem: NSStatusItem?
     var webSocketTask: URLSessionWebSocketTask?
+    var webSocketTaskFutures: URLSessionWebSocketTask?
     var cryptocurrencies: [String: CryptoCurrency] = [:]
     var selectedCryptos: [String] = []
     var selectedCrypto: String { selectedCryptos.first ?? "BTCUSDT" }
     var reconnectTimer: Timer?
-    var topListRefreshTimer: Timer?
-    var currentTopSymbols: [String] = []
+    var reconnectTimerFutures: Timer?
     var iconCache: [String: NSImage] = [:]
 
-    // Pinned symbols always shown regardless of volume ranking
-    private let pinnedSymbols: [String] = ["PAXGUSDT", "HYPEUSDT"]
+    // Symbols only available on Binance Futures (not on Spot)
+    private let futuresOnlySymbols: Set<String> = ["HYPEUSDT"]
 
-    // Stablecoins and wrapped tokens to exclude from volume ranking
-    private let excludedSymbols: Set<String> = [
-        "USDCUSDT", "FDUSDUSDT", "BUSDUSDT", "TUSDUSDT", "DAIUSDT",
-        "USDPUSDT", "EURUSDT", "GBPUSDT", "BTTCUSDT"
+    // Fixed top 30 cryptocurrency list
+    private let fixedTopSymbols: [String] = [
+        "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
+        "DOGEUSDT", "ADAUSDT", "TRXUSDT", "LINKUSDT", "AVAXUSDT",
+        "DOTUSDT", "SUIUSDT", "HYPEUSDT", "PAXGUSDT", "LTCUSDT",
+        "NEARUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "UNIUSDT",
+        "ATOMUSDT", "AAVEUSDT", "XLMUSDT", "HBARUSDT", "FILUSDT",
+        "INJUSDT", "PEPEUSDT", "BCHUSDT", "ETCUSDT", "ASTERUSDT"
     ]
 
     // CoinMarketCap ID mapping for coin logo icons
@@ -56,7 +60,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "WIF": 28752, "RENDER": 5690, "FET": 3773, "TAO": 22974,
         "BONK": 23095, "FLOKI": 10804, "WLD": 13502, "SEI": 23149,
         "TRUMP": 35336, "VIRTUAL": 28658, "USUAL": 34403, "PENGU": 35135,
-        "KAITO": 36498, "BERA": 35899, "IP": 36785, "LAYER": 33758
+        "KAITO": 36498, "BERA": 35899, "IP": 36785, "LAYER": 33758,
+        "ASTER": 36341, "ZEC": 1684, "USD1": 36148
     ]
 
     // Known full names for popular coins
@@ -79,25 +84,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "WLD": "Worldcoin", "SEI": "Sei", "TRUMP": "TRUMP",
         "VIRTUAL": "Virtuals Protocol", "USUAL": "Usual",
         "PENGU": "Pudgy Penguins", "KAITO": "Kaito",
-        "BERA": "Berachain", "IP": "Story Protocol", "LAYER": "UniLayer"
+        "BERA": "Berachain", "IP": "Story Protocol", "LAYER": "UniLayer",
+        "ASTER": "Aster", "ZEC": "Zcash", "USD1": "USD1"
     ]
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         print("App launched successfully!")
+        initializeCryptocurrencies()
         setupStatusBar()
         print("Status bar setup complete")
-        fetchTopCryptocurrencies { [weak self] in
-            self?.downloadAllIcons()
-            self?.connectToWebSocket()
+        fetchInitialPrices {
+            self.downloadAllIcons()
+            self.connectToWebSocket()
+            self.connectToFuturesWebSocket()
         }
-        scheduleTopListRefresh()
-        print("Fetching top cryptocurrencies by volume...")
+        print("Loading fixed top 30 cryptocurrencies...")
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
         reconnectTimer?.invalidate()
-        topListRefreshTimer?.invalidate()
+        reconnectTimerFutures?.invalidate()
     }
 
     // MARK: - Status Bar Setup
@@ -118,7 +126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         // Summary line
-        let summaryItem = NSMenuItem(title: "Top 10 by 24h Volume", action: nil, keyEquivalent: "")
+        let summaryItem = NSMenuItem(title: "Top 30 Cryptocurrencies", action: nil, keyEquivalent: "")
         summaryItem.tag = 100
         menu.addItem(summaryItem)
 
@@ -128,7 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let allCryptosItem = NSMenuItem(title: "All Cryptocurrencies", action: nil, keyEquivalent: "")
         let allCryptosMenu = NSMenu()
 
-        for symbol in currentTopSymbols {
+        for symbol in fixedTopSymbols {
             if let crypto = cryptocurrencies[symbol] {
                 let cryptoItem = NSMenuItem(
                     title: "\(crypto.name): Loading...",
@@ -171,10 +179,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.menu = menu
     }
 
-    // MARK: - Top Cryptocurrencies Fetch
+    // MARK: - Initialize Fixed Cryptocurrencies
 
-    private func fetchTopCryptocurrencies(completion: @escaping () -> Void) {
-        guard let url = URL(string: "https://api.binance.com/api/v3/ticker/24hr") else {
+    private func initializeCryptocurrencies() {
+        for symbol in fixedTopSymbols {
+            let baseSymbol = extractBaseSymbol(from: symbol)
+            let name = knownNames[baseSymbol] ?? baseSymbol
+            cryptocurrencies[symbol] = CryptoCurrency(symbol: symbol, name: name, emoji: "🪙")
+        }
+        if selectedCryptos.isEmpty {
+            selectedCryptos = ["BTCUSDT"]
+        }
+    }
+
+    private func extractBaseSymbol(from tradingPair: String) -> String {
+        if tradingPair.hasSuffix("USDT") {
+            return String(tradingPair.dropLast(4))
+        }
+        return tradingPair
+    }
+
+    // MARK: - Fetch Initial Prices
+
+    private func fetchInitialPrices(completion: @escaping () -> Void) {
+        // Fetch spot prices
+        let spotSymbols = fixedTopSymbols.filter { !futuresOnlySymbols.contains($0) }
+        let symbolsParam = spotSymbols.map { "\"\($0)\"" }.joined(separator: ",")
+        let urlString = "https://api.binance.com/api/v3/ticker/24hr?symbols=[\(symbolsParam)]"
+        guard let encodedString = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: encodedString) else {
             completion()
             return
         }
@@ -183,7 +216,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self,
                   let data = data,
                   error == nil else {
-                print("Error fetching ticker data: \(error?.localizedDescription ?? "Unknown error")")
+                print("Error fetching initial prices: \(error?.localizedDescription ?? "Unknown error")")
                 DispatchQueue.main.async { completion() }
                 return
             }
@@ -194,101 +227,76 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                // Filter USDT pairs, exclude stablecoins, sort by quoteVolume
-                let usdtPairs = jsonArray.filter { item in
-                    guard let symbol = item["symbol"] as? String else { return false }
-                    return symbol.hasSuffix("USDT")
-                        && !self.excludedSymbols.contains(symbol)
-                }
-
-                let sortedByVolume = usdtPairs.sorted { a, b in
-                    let volA = Double(a["quoteVolume"] as? String ?? "0") ?? 0
-                    let volB = Double(b["quoteVolume"] as? String ?? "0") ?? 0
-                    return volA > volB
-                }
-
-                let top10 = Array(sortedByVolume.prefix(10))
-                var newSymbols = top10.compactMap { $0["symbol"] as? String }
-
-                // Add pinned symbols if not already in top 10
-                for pinned in self.pinnedSymbols {
-                    if !newSymbols.contains(pinned) {
-                        newSymbols.append(pinned)
-                    }
-                }
-
-                // Build lookup for all ticker data
-                var tickerLookup: [String: [String: Any]] = [:]
-                for item in jsonArray {
-                    if let symbol = item["symbol"] as? String {
-                        tickerLookup[symbol] = item
-                    }
-                }
-
                 DispatchQueue.main.async {
-                    let listChanged = newSymbols != self.currentTopSymbols
-                    self.currentTopSymbols = newSymbols
-
-                    // Build CryptoCurrency instances and populate prices
-                    var newCryptos: [String: CryptoCurrency] = [:]
-                    for symbol in newSymbols {
-                        let baseSymbol = self.extractBaseSymbol(from: symbol)
-                        let name = self.knownNames[baseSymbol] ?? baseSymbol
-                        let emoji = "🪙"
-
-                        var crypto = CryptoCurrency(symbol: symbol, name: name, emoji: emoji)
-
-                        if let ticker = tickerLookup[symbol] {
-                            crypto.price = Double(ticker["lastPrice"] as? String ?? "0") ?? 0
-                            crypto.change24h = Double(ticker["priceChange"] as? String ?? "0") ?? 0
-                            crypto.changePercent24h = Double(ticker["priceChangePercent"] as? String ?? "0") ?? 0
-                            crypto.lastUpdate = Date()
-                        }
-
-                        newCryptos[symbol] = crypto
+                    for item in jsonArray {
+                        guard let symbol = item["symbol"] as? String,
+                              self.cryptocurrencies[symbol] != nil else { continue }
+                        self.cryptocurrencies[symbol]?.price = Double(item["lastPrice"] as? String ?? "0") ?? 0
+                        self.cryptocurrencies[symbol]?.change24h = Double(item["priceChange"] as? String ?? "0") ?? 0
+                        self.cryptocurrencies[symbol]?.changePercent24h = Double(item["priceChangePercent"] as? String ?? "0") ?? 0
+                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
                     }
-
-                    self.cryptocurrencies = newCryptos
-                    self.selectedCryptos = newSymbols
-
-                    if listChanged {
-                        self.setupMenu()
-                    }
-
                     self.updateUI()
-                    completion()
+
+                    // Fetch futures-only symbols separately
+                    self.fetchFuturesInitialPrices {
+                        completion()
+                    }
                 }
             } catch {
-                print("Error parsing ticker JSON: \(error.localizedDescription)")
+                print("Error parsing initial prices JSON: \(error.localizedDescription)")
                 DispatchQueue.main.async { completion() }
             }
         }
-
         task.resume()
     }
 
-    private func extractBaseSymbol(from tradingPair: String) -> String {
-        if tradingPair.hasSuffix("USDT") {
-            return String(tradingPair.dropLast(4))
+    private func fetchFuturesInitialPrices(completion: @escaping () -> Void) {
+        let futuresSymbols = fixedTopSymbols.filter { futuresOnlySymbols.contains($0) }
+        guard !futuresSymbols.isEmpty else {
+            completion()
+            return
         }
-        return tradingPair
-    }
 
-    private func scheduleTopListRefresh() {
-        topListRefreshTimer?.invalidate()
-        topListRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
-            print("Refreshing top 10 list...")
-            self?.fetchTopCryptocurrencies {
-                self?.downloadAllIcons()
-                self?.connectToWebSocket()
+        let group = DispatchGroup()
+        for symbol in futuresSymbols {
+            guard let url = URL(string: "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)") else { continue }
+            group.enter()
+            let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                defer { group.leave() }
+                guard let self = self, let data = data, error == nil else {
+                    print("Error fetching futures price for \(symbol): \(error?.localizedDescription ?? "Unknown")")
+                    return
+                }
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let priceString = json["lastPrice"] as? String,
+                       let price = Double(priceString) {
+                        let changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
+                        let change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
+                        DispatchQueue.main.async {
+                            self.cryptocurrencies[symbol]?.price = price
+                            self.cryptocurrencies[symbol]?.change24h = change24h
+                            self.cryptocurrencies[symbol]?.changePercent24h = changePercent
+                            self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                            self.updateUI()
+                        }
+                    }
+                } catch {
+                    print("Error parsing futures JSON for \(symbol): \(error)")
+                }
             }
+            task.resume()
+        }
+        group.notify(queue: .main) {
+            completion()
         }
     }
 
     // MARK: - Icon Download
 
     private func downloadAllIcons() {
-        for symbol in currentTopSymbols {
+        for symbol in fixedTopSymbols {
             if iconCache[symbol] != nil { continue }
             downloadCoinIcon(symbol: symbol)
         }
@@ -374,16 +382,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func reconnectWebSocket() {
         print("Manual reconnect requested")
-        fetchTopCryptocurrencies { [weak self] in
+        fetchInitialPrices { [weak self] in
             self?.downloadAllIcons()
             self?.connectToWebSocket()
+            self?.connectToFuturesWebSocket()
         }
     }
 
     @objc func showAbout() {
         let alert = NSAlert()
         alert.messageText = "Crypto Price Monitor"
-        alert.informativeText = "Displays top 10 cryptocurrencies by 24h trading volume.\n\nPinned: PAXG, HYPE\n\nReal-time data from Binance WebSocket API\nCoin icons from CoinMarketCap"
+        alert.informativeText = "Displays top 30 cryptocurrencies with real-time prices.\n\nCreated by github.com/Gamezxz\n\nReal-time data from Binance WebSocket API\nCoin icons from CoinMarketCap"
         alert.alertStyle = .informational
         alert.runModal()
     }
@@ -392,20 +401,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    // MARK: - WebSocket
+    // MARK: - WebSocket (Spot)
 
     private func connectToWebSocket() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
 
-        guard !currentTopSymbols.isEmpty else {
-            print("No symbols to subscribe")
+        // Only subscribe to spot symbols (exclude futures-only)
+        let spotSymbols = fixedTopSymbols.filter { !futuresOnlySymbols.contains($0) }
+        guard !spotSymbols.isEmpty else {
+            print("No spot symbols to subscribe")
             return
         }
 
-        let streams = currentTopSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
+        let streams = spotSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
 
         guard let url = URL(string: "wss://stream.binance.com:9443/stream?streams=\(streams)") else {
-            print("Invalid WebSocket URL")
+            print("Invalid WebSocket URL (Spot)")
             return
         }
 
@@ -414,14 +425,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         webSocketTask?.resume()
         receiveMessage()
 
-        print("WebSocket connecting for: \(currentTopSymbols.joined(separator: ", "))")
+        print("WebSocket (Spot) connecting for: \(spotSymbols.joined(separator: ", "))")
     }
 
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
             switch result {
             case .failure(let error):
-                print("WebSocket receive error: \(error)")
+                print("WebSocket (Spot) receive error: \(error)")
                 self?.scheduleReconnect()
 
             case .success(let message):
@@ -437,6 +448,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 self?.receiveMessage()
+            }
+        }
+    }
+
+    // MARK: - WebSocket (Futures)
+
+    private func connectToFuturesWebSocket() {
+        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
+
+        let futSymbols = fixedTopSymbols.filter { futuresOnlySymbols.contains($0) }
+        guard !futSymbols.isEmpty else {
+            print("No futures symbols to subscribe")
+            return
+        }
+
+        let streams = futSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
+
+        guard let url = URL(string: "wss://fstream.binance.com/stream?streams=\(streams)") else {
+            print("Invalid WebSocket URL (Futures)")
+            return
+        }
+
+        let session = URLSession(configuration: .default)
+        webSocketTaskFutures = session.webSocketTask(with: url)
+        webSocketTaskFutures?.resume()
+        receiveFuturesMessage()
+
+        print("WebSocket (Futures) connecting for: \(futSymbols.joined(separator: ", "))")
+    }
+
+    private func receiveFuturesMessage() {
+        webSocketTaskFutures?.receive { [weak self] result in
+            switch result {
+            case .failure(let error):
+                print("WebSocket (Futures) receive error: \(error)")
+                self?.scheduleReconnectFutures()
+
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    self?.processBinanceMessage(text)
+                case .data(let data):
+                    if let text = String(data: data, encoding: .utf8) {
+                        self?.processBinanceMessage(text)
+                    }
+                @unknown default:
+                    break
+                }
+
+                self?.receiveFuturesMessage()
             }
         }
     }
@@ -493,8 +554,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             self.reconnectTimer?.invalidate()
             self.reconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
-                print("Attempting to reconnect WebSocket...")
+                print("Attempting to reconnect Spot WebSocket...")
                 self.connectToWebSocket()
+            }
+        }
+    }
+
+    private func scheduleReconnectFutures() {
+        DispatchQueue.main.async {
+            self.reconnectTimerFutures?.invalidate()
+            self.reconnectTimerFutures = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+                print("Attempting to reconnect Futures WebSocket...")
+                self.connectToFuturesWebSocket()
             }
         }
     }
@@ -543,8 +614,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Update summary line in menu
         if let menu = statusItem?.menu,
            let summaryItem = menu.item(withTag: 100) {
-            let pinnedCount = pinnedSymbols.filter { currentTopSymbols.contains($0) && !Array(currentTopSymbols.prefix(10)).contains($0) }.count
-            summaryItem.title = "Top 10 by 24h Volume" + (pinnedCount > 0 ? " + \(pinnedCount) pinned" : "")
+            summaryItem.title = "Top 30 Cryptocurrencies"
         }
     }
 
@@ -559,8 +629,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let priceString = formatPrice(crypto.price)
                 let changeString = formatPercentChange(crypto.changePercent24h)
                 let isSelected = selectedCryptos.contains(symbol) ? " ✓" : ""
-                let isPinned = pinnedSymbols.contains(symbol) ? " 📌" : ""
-                item.title = "\(crypto.name): $\(priceString) \(changeString)\(isPinned)\(isSelected)"
+                item.title = "\(crypto.name): $\(priceString) \(changeString)\(isSelected)"
 
                 // Update icon
                 if let icon = iconCache[symbol] {
