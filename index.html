@@ -33,6 +33,10 @@
       scroll-padding-top: 4rem;
     }
 
+    @media (min-width: 768px) {
+      html { scroll-padding-top: calc(4rem + 28px); }
+    }
+
     body {
       background: var(--page-bg);
       color: var(--page-fg);
@@ -131,6 +135,8 @@
 
     @media (min-width: 768px) {
       .nav-links { display: flex; }
+      .navbar { top: 28px; }
+      .mobile-menu { top: calc(3.5rem + 28px); }
     }
 
     .nav-links a {
@@ -224,6 +230,10 @@
       padding: 7rem 0 4rem;
       text-align: center;
       position: relative;
+    }
+
+    @media (min-width: 768px) {
+      .hero { padding-top: calc(7rem + 28px); }
     }
 
     .hero-badge {
@@ -819,12 +829,171 @@
       display: inline-block;
       vertical-align: middle;
     }
+
+    /* ==================== macOS SIMULATED MENU BAR ==================== */
+    .macos-bar {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 28px;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 60;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+      user-select: none;
+    }
+
+    @media (min-width: 768px) {
+      .macos-bar { display: flex; }
+    }
+
+    .macos-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .macos-bar-left .apple-icon {
+      display: flex;
+      align-items: center;
+    }
+
+    .macos-bar-left .apple-icon svg {
+      width: 13px;
+      height: 16px;
+      fill: rgba(255, 255, 255, 0.85);
+    }
+
+    .macos-bar-left .app-name {
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .macos-bar-left .menu-items {
+      display: flex;
+      gap: 14px;
+    }
+
+    .macos-bar-left .menu-items span {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .macos-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .macos-bar-crypto {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-right: 8px;
+    }
+
+    .macos-bar-crypto-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .macos-bar-crypto-item img {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+    }
+
+    .macos-bar-crypto-item .bar-price {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .macos-bar-crypto-item .bar-change {
+      font-size: 11px;
+      font-weight: 400;
+    }
+
+    .macos-bar-crypto-item .bar-sep {
+      color: rgba(255, 255, 255, 0.15);
+      margin: 0 2px;
+    }
+
+    .macos-bar-system {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .macos-bar-system svg {
+      width: 15px;
+      height: 15px;
+      fill: rgba(255, 255, 255, 0.7);
+    }
+
+    .macos-bar-system .bar-time {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+      font-weight: 400;
+      min-width: 72px;
+      text-align: right;
+    }
+
+    .macos-bar-crypto-item.bar-flash .bar-price {
+      animation: bar-price-flash 0.6s ease-out;
+    }
+
+    @keyframes bar-price-flash {
+      0% { color: rgba(255, 255, 255, 1); text-shadow: 0 0 6px rgba(191, 255, 0, 0.5); }
+      100% { color: rgba(255, 255, 255, 0.9); text-shadow: none; }
+    }
   </style>
 </head>
 <body>
 
 <div class="bg-glow"></div>
 <div class="noise-overlay"></div>
+
+<!-- ==================== macOS SIMULATED MENU BAR ==================== -->
+<div class="macos-bar" id="macos-bar">
+  <div class="macos-bar-left">
+    <div class="apple-icon">
+      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M12.595 5.996c-.024 2.64 2.317 3.91 2.424 3.968-.019.067-.379 1.298-1.251 2.572-.753 1.1-1.534 2.198-2.764 2.22-1.21.023-1.598-.717-2.981-.717-1.381 0-1.812.694-2.96.74-1.188.044-2.093-1.19-2.852-2.286C.69 10.124-.278 6.78.826 4.482c.546-1.139 1.522-1.862 2.582-1.882 1.167-.022 2.269.784 2.982.784.713 0 2.051-.97 3.457-.828.589.025 2.243.238 3.304 1.79-.085.053-1.972 1.15-1.952 3.434l-.004.217zM10.276 1.73c.63-.765 1.056-1.828.94-2.889-.909.037-2.009.606-2.662 1.37-.586.679-1.099 1.763-.96 2.803.997.077 2.015-.516 2.642-1.28l.04-.004z"/></svg>
+    </div>
+    <span class="app-name">Crypto Price Tracker</span>
+    <div class="menu-items">
+      <span>File</span>
+      <span>Edit</span>
+      <span>View</span>
+      <span>Window</span>
+      <span>Help</span>
+    </div>
+  </div>
+  <div class="macos-bar-right">
+    <div class="macos-bar-crypto" id="macos-bar-crypto">
+      <!-- Populated by JS -->
+    </div>
+    <div class="macos-bar-system">
+      <!-- Wi-Fi icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1.293 8.395l1.414 1.414c4.686-4.686 12.284-4.686 16.97 0l1.414-1.414c-5.467-5.467-14.331-5.467-19.798 0zm3.536 3.536l1.414 1.414c3.12-3.12 8.186-3.12 11.306 0l1.414-1.414c-4.006-4.006-10.494-4.006-14.134 0zm3.536 3.536l1.414 1.414c1.56-1.56 4.095-1.56 5.656 0l1.414-1.414c-2.353-2.353-6.131-2.353-8.484 0zM12 18l2-2c-.781-.781-2.219-.781-3 0l1 2z"/></svg>
+      <!-- Battery icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="7" width="18" height="10" rx="1.5" ry="1.5" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/><rect x="4" y="9" width="14" height="6" rx="0.5" fill="rgba(255,255,255,0.7)"/><path d="M22 11v2" stroke="rgba(255,255,255,0.7)" stroke-width="2" stroke-linecap="round"/></svg>
+      <span class="bar-time" id="bar-time"></span>
+    </div>
+  </div>
+</div>
 
 <!-- ==================== NAVBAR ==================== -->
 <nav class="navbar">
@@ -1150,6 +1319,7 @@ async function fetchPrices() {
     lastUpdate = new Date();
     updateRefreshInfo();
     updateMarquee(priceMap);
+    updateMacosBar(priceMap);
   } catch (err) {
     console.error('Failed to fetch prices:', err);
   }
@@ -1181,6 +1351,101 @@ function updateMarquee(priceMap) {
   // Duplicate for seamless loop
   track.innerHTML = items + items;
 }
+
+// ==================== macOS BAR (WebSocket Real-time) ====================
+const MENUBAR_COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT'];
+const barPriceMap = {};
+let barWs = null;
+
+function renderMacosBar() {
+  const container = document.getElementById('macos-bar-crypto');
+  if (!container) return;
+
+  container.innerHTML = MENUBAR_COINS.map((symbol, i) => {
+    const coin = COINS.find(c => c.symbol === symbol);
+    const data = barPriceMap[symbol];
+    if (!coin || !data) return '';
+    const changeClass = data.change >= 0 ? 'change-up' : 'change-down';
+    const sep = i < MENUBAR_COINS.length - 1 ? '<span class="bar-sep">|</span>' : '';
+    return `<div class="macos-bar-crypto-item" id="bar-${symbol}">
+      <img src="${cmcIcon(coin.cmcId)}" alt="${coin.base}" width="14" height="14" onerror="this.style.display='none'">
+      <span class="bar-price">$${formatPrice(data.price)}</span>
+      <span class="bar-change ${changeClass}">${formatChange(data.change)}</span>
+      ${sep}
+    </div>`;
+  }).join('');
+}
+
+function updateMacosBar(priceMap) {
+  for (const sym of MENUBAR_COINS) {
+    if (priceMap[sym]) barPriceMap[sym] = { ...priceMap[sym] };
+  }
+  renderMacosBar();
+}
+
+function updateBarItem(symbol, price, change) {
+  barPriceMap[symbol] = { price, change };
+  const el = document.getElementById('bar-' + symbol);
+  if (!el) { renderMacosBar(); return; }
+  const priceEl = el.querySelector('.bar-price');
+  const changeEl = el.querySelector('.bar-change');
+  if (priceEl) priceEl.textContent = '$' + formatPrice(price);
+  if (changeEl) {
+    changeEl.textContent = formatChange(change);
+    changeEl.className = 'bar-change ' + (change >= 0 ? 'change-up' : 'change-down');
+  }
+  el.classList.remove('bar-flash');
+  void el.offsetWidth;
+  el.classList.add('bar-flash');
+}
+
+function connectBarWebSocket() {
+  const streams = MENUBAR_COINS.map(s => s.toLowerCase() + '@ticker').join('/');
+  const url = 'wss://stream.binance.com:9443/stream?streams=' + streams;
+  barWs = new WebSocket(url);
+
+  barWs.onmessage = function(event) {
+    try {
+      const msg = JSON.parse(event.data);
+      const d = msg.data;
+      if (!d || !d.s) return;
+      const symbol = d.s;
+      if (!MENUBAR_COINS.includes(symbol)) return;
+      const price = parseFloat(d.c);
+      const change = parseFloat(d.P);
+      updateBarItem(symbol, price, change);
+    } catch (e) {}
+  };
+
+  barWs.onclose = function() {
+    setTimeout(connectBarWebSocket, 5000);
+  };
+
+  barWs.onerror = function() {
+    barWs.close();
+  };
+}
+
+connectBarWebSocket();
+
+function updateBarTime() {
+  const el = document.getElementById('bar-time');
+  if (!el) return;
+  const now = new Date();
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = days[now.getDay()];
+  const mon = months[now.getMonth()];
+  const date = now.getDate();
+  const h = now.getHours();
+  const m = now.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  el.textContent = `${day} ${mon} ${date}  ${h12}:${m} ${ampm}`;
+}
+
+updateBarTime();
+setInterval(updateBarTime, 60000);
 
 // ==================== INIT ====================
 fetchPrices();
