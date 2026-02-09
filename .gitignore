@@ -114,7 +114,9 @@ Temporary Items
 
 # Build outputs
 build_swift/
+dist/
 pkg_temp/
+temp_dmg/
 
 # Python
 __pycache__/
