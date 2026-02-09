@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto Price Tracker — macOS Menu Bar App</title>
+  <meta name="description" content="Track real-time cryptocurrency prices from your macOS menu bar. Supports 30 top cryptocurrencies with live Binance WebSocket data.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --page-bg: #0a0a0a;
+      --page-bg-subtle: #111111;
+      --page-fg: #fafafa;
+      --page-fg-muted: rgba(255, 255, 255, 0.65);
+      --page-fg-subtle: rgba(255, 255, 255, 0.4);
+      --page-accent: #bfff00;
+      --page-accent-soft: rgba(191, 255, 0, 0.06);
+      --page-accent-glow: rgba(191, 255, 0, 0.04);
+      --page-border: rgba(255, 255, 255, 0.08);
+      --page-border-hover: rgba(255, 255, 255, 0.15);
+      --card-bg: rgba(0, 0, 0, 0.15);
+      --card-bg-hover: rgba(0, 0, 0, 0.25);
+      --green: #22c55e;
+      --red: #ef4444;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 4rem;
+    }
+
+    body {
+      background: var(--page-bg);
+      color: var(--page-fg);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+
+    /* Background effects */
+    .bg-glow {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(80% 60% at 50% 0%, var(--page-accent-soft), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .noise-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.25;
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+      z-index: 1;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 182px;
+    }
+
+    /* Container */
+    .container {
+      max-width: 80rem;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 2;
+    }
+
+    @media (min-width: 1024px) {
+      .container { padding: 0 3rem; }
+    }
+
+    /* ==================== NAVBAR ==================== */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3.5rem;
+      background: rgba(10, 10, 10, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--page-border);
+      z-index: 50;
+      display: flex;
+      align-items: center;
+    }
+
+    .navbar .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      color: var(--page-fg);
+      font-weight: 700;
+      font-size: 0.925rem;
+    }
+
+    .nav-brand img {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+    }
+
+    .nav-links {
+      display: none;
+      align-items: center;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    @media (min-width: 768px) {
+      .nav-links { display: flex; }
+    }
+
+    .nav-links a {
+      color: var(--page-fg-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--page-fg);
+    }
+
+    .nav-cta {
+      background: var(--page-accent);
+      color: #0a0a0a !important;
+      padding: 0.5rem 1.25rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.8rem;
+      transition: filter 0.2s ease;
+    }
+
+    .nav-cta:hover {
+      filter: brightness(1.1);
+      color: #0a0a0a !important;
+    }
+
+    /* Mobile menu toggle */
+    .nav-toggle {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    @media (min-width: 768px) {
+      .nav-toggle { display: none; }
+    }
+
+    .nav-toggle span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--page-fg-muted);
+      border-radius: 1px;
+      transition: 0.2s ease;
+    }
+
+    .mobile-menu {
+      display: none;
+      position: fixed;
+      top: 3.5rem;
+      left: 0;
+      width: 100%;
+      background: rgba(10, 10, 10, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--page-border);
+      z-index: 49;
+      padding: 1rem 1.5rem;
+    }
+
+    .mobile-menu.open { display: block; }
+
+    .mobile-menu a {
+      display: block;
+      color: var(--page-fg-muted);
+      text-decoration: none;
+      font-size: 0.925rem;
+      font-weight: 500;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--page-border);
+      transition: color 0.2s ease;
+    }
+
+    .mobile-menu a:last-child { border-bottom: none; }
+    .mobile-menu a:hover { color: var(--page-fg); }
+
+    /* ==================== HERO ==================== */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 7rem 0 4rem;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--page-border);
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      color: var(--page-fg-muted);
+      margin-bottom: 2rem;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .hero h1 {
+      font-size: clamp(2.25rem, 6vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      max-width: 700px;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 .accent {
+      color: var(--page-accent);
+    }
+
+    .hero-sub {
+      font-size: 1.1rem;
+      color: var(--page-fg-muted);
+      max-width: 520px;
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--page-accent);
+      color: #0a0a0a;
+      padding: 0.875rem 2rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: filter 0.2s ease;
+    }
+
+    .btn-primary:hover { filter: brightness(1.1); }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      color: var(--page-fg);
+      padding: 0.875rem 2rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: 1px solid var(--page-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--page-border-hover);
+      color: #ffffff;
+    }
+
+    /* Screenshot card */
+    .screenshot-card {
+      position: relative;
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto 3rem;
+    }
+
+    .screenshot-card::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 1.125rem;
+      background: linear-gradient(135deg, rgba(191, 255, 0, 0.2), transparent 60%);
+      z-index: -1;
+    }
+
+    .screenshot-card::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120%;
+      height: 120%;
+      background: radial-gradient(ellipse, rgba(191, 255, 0, 0.06), transparent 70%);
+      pointer-events: none;
+      z-index: -2;
+    }
+
+    .screenshot-card img {
+      width: 100%;
+      border-radius: 1rem;
+      border: 1px solid var(--page-border);
+      display: block;
+    }
+
+    /* Marquee status bar mockup */
+    .status-bar-mockup {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--page-border);
+      border-radius: 0.5rem;
+      padding: 0.5rem 0;
+      overflow: hidden;
+      max-width: 600px;
+      width: 100%;
+      margin: 0 auto;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .marquee-track {
+      display: flex;
+      gap: 2rem;
+      animation: marquee 25s linear infinite;
+      width: max-content;
+    }
+
+    .marquee-item {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      color: var(--page-fg-muted);
+    }
+
+    .marquee-item img {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+    }
+
+    .marquee-item .price {
+      color: var(--page-fg);
+      font-weight: 500;
+    }
+
+    .marquee-item .change-up { color: var(--green); }
+    .marquee-item .change-down { color: var(--red); }
+
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ==================== SECTIONS ==================== */
+    .section {
+      padding: 4rem 0;
+    }
+
+    @media (min-width: 1024px) {
+      .section { padding: 6rem 0; }
+    }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--page-accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+
+    .section-sub {
+      color: var(--page-fg-muted);
+      max-width: 560px;
+      font-size: 1rem;
+      line-height: 1.7;
+      margin-bottom: 3rem;
+    }
+
+    .section-center {
+      text-align: center;
+    }
+
+    .section-center .section-sub {
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ==================== FEATURES ==================== */
+    .features-grid {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 640px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (min-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--page-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .feature-card:hover {
+      background: var(--card-bg-hover);
+      border-color: var(--page-border-hover);
+    }
+
+    .feature-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 0.625rem;
+      background: var(--page-accent-soft);
+      border: 1px solid rgba(191, 255, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.15rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-card p {
+      font-size: 0.875rem;
+      color: var(--page-fg-muted);
+      line-height: 1.6;
+    }
+
+    /* ==================== LIVE PRICES ==================== */
+    .prices-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .prices-header .left .section-label,
+    .prices-header .left .section-title {
+      margin-bottom: 0.25rem;
+    }
+
+    .prices-header .left .section-sub {
+      margin-bottom: 0;
+    }
+
+    .refresh-info {
+      font-size: 0.75rem;
+      color: var(--page-fg-subtle);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .prices-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 480px) {
+      .prices-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (min-width: 768px) {
+      .prices-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (min-width: 1024px) {
+      .prices-grid { grid-template-columns: repeat(5, 1fr); }
+    }
+
+    .price-card {
+      background: var(--card-bg);
+      border: 1px solid var(--page-border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      transition: background 0.2s ease, border-color 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .price-card:hover {
+      background: var(--card-bg-hover);
+      border-color: var(--page-border-hover);
+    }
+
+    .price-card img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .price-card .coin-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .price-card .coin-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .price-card .coin-symbol {
+      font-size: 0.7rem;
+      color: var(--page-fg-subtle);
+      font-weight: 500;
+    }
+
+    .price-card .coin-price-col {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .price-card .coin-price {
+      font-size: 0.825rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .price-card .coin-change {
+      font-size: 0.7rem;
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .change-up { color: var(--green); }
+    .change-down { color: var(--red); }
+
+    .price-card.loading .coin-price,
+    .price-card.loading .coin-change {
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+      color: transparent;
+      animation: shimmer 1.5s ease infinite;
+    }
+
+    @keyframes shimmer {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    /* ==================== HOW IT WORKS ==================== */
+    .steps {
+      display: grid;
+      gap: 2rem;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 768px) {
+      .steps { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .step-card {
+      background: var(--card-bg);
+      border: 1px solid var(--page-border);
+      border-radius: 1rem;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      position: relative;
+    }
+
+    .step-number {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 50%;
+      background: var(--page-accent);
+      color: #0a0a0a;
+      font-weight: 700;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.25rem;
+    }
+
+    .step-card h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-card p {
+      font-size: 0.875rem;
+      color: var(--page-fg-muted);
+      line-height: 1.6;
+    }
+
+    /* Arrow connectors for desktop */
+    @media (min-width: 768px) {
+      .step-card:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 2.75rem;
+        right: -1.25rem;
+        width: 2rem;
+        height: 2px;
+        background: var(--page-border-hover);
+      }
+    }
+
+    /* ==================== DOWNLOAD ==================== */
+    .download-section {
+      text-align: center;
+    }
+
+    .download-card {
+      background: var(--card-bg);
+      border: 1px solid var(--page-border);
+      border-radius: 1.25rem;
+      padding: 3rem 2rem;
+      max-width: 640px;
+      margin: 0 auto;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .download-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at center, rgba(191, 255, 0, 0.03), transparent 60%);
+      pointer-events: none;
+    }
+
+    .download-card > * { position: relative; }
+
+    .download-card .section-title {
+      margin-bottom: 0.75rem;
+    }
+
+    .download-card .section-sub {
+      margin: 0 auto 2rem;
+    }
+
+    .sys-req {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--page-border);
+      border-radius: 9999px;
+      padding: 0.375rem 1rem;
+      font-size: 0.75rem;
+      color: var(--page-fg-subtle);
+      margin-bottom: 1.75rem;
+    }
+
+    .download-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .build-source {
+      font-size: 0.8rem;
+      color: var(--page-fg-subtle);
+      line-height: 1.8;
+    }
+
+    .build-source code {
+      background: rgba(255,255,255,0.06);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--page-fg-muted);
+    }
+
+    /* ==================== FOOTER ==================== */
+    .footer {
+      border-top: 1px solid var(--page-border);
+      padding: 2rem 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    .footer .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-left {
+      font-size: 0.8rem;
+      color: var(--page-fg-subtle);
+    }
+
+    .footer-left a {
+      color: var(--page-fg-muted);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-left a:hover { color: var(--page-fg); }
+
+    .footer-right {
+      font-size: 0.75rem;
+      color: var(--page-fg-subtle);
+    }
+
+    /* Utility */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
+
+    /* SVG icons inline */
+    .icon-svg {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+<div class="noise-overlay"></div>
+
+<!-- ==================== NAVBAR ==================== -->
+<nav class="navbar">
+  <div class="container">
+    <a href="#" class="nav-brand">
+      <img src="logo.png" alt="Crypto Price Tracker" onerror="this.style.display='none'">
+      <span>Crypto Price Tracker</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#prices">Live Prices</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#download" class="nav-cta">Download</a></li>
+    </ul>
+    <button class="nav-toggle" onclick="document.querySelector('.mobile-menu').classList.toggle('open')" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<div class="mobile-menu">
+  <a href="#features" onclick="this.parentElement.classList.remove('open')">Features</a>
+  <a href="#prices" onclick="this.parentElement.classList.remove('open')">Live Prices</a>
+  <a href="#how-it-works" onclick="this.parentElement.classList.remove('open')">How It Works</a>
+  <a href="#download" onclick="this.parentElement.classList.remove('open')">Download</a>
+</div>
+
+<!-- ==================== HERO ==================== -->
+<section class="hero" id="hero">
+  <div class="container" style="display:flex;flex-direction:column;align-items:center;">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      Free &amp; Open Source &mdash; macOS 13.0+
+    </div>
+
+    <h1>Track Crypto Prices<br>From Your <span class="accent">Menu Bar</span></h1>
+
+    <p class="hero-sub">
+      A lightweight native macOS app that displays real-time cryptocurrency prices right in your status bar. Powered by Binance WebSocket for instant updates.
+    </p>
+
+    <div class="hero-buttons">
+      <a href="#download" class="btn-primary">
+        <svg class="icon-svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/><path d="M13 13H3v1h10v-1z"/></svg>
+        Download for macOS
+      </a>
+      <a href="https://github.com/Gamezxz/crypto-price-tracker" target="_blank" rel="noopener" class="btn-secondary">
+        <svg class="icon-svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <div class="screenshot-card">
+      <img src="new_ss.png" alt="Crypto Price Tracker screenshot showing the macOS menu bar with cryptocurrency prices" loading="lazy">
+    </div>
+
+    <div class="status-bar-mockup" id="marquee-bar">
+      <div class="marquee-track" id="marquee-track">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FEATURES ==================== -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-center">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Everything you need to track crypto</h2>
+      <p class="section-sub">Built natively for macOS with performance and simplicity in mind.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#9889;</div>
+        <h3>Real-time WebSocket Prices</h3>
+        <p>Live price streaming directly from Binance WebSocket API. No polling, no delays &mdash; instant updates as trades happen.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128202;</div>
+        <h3>30 Top Cryptocurrencies</h3>
+        <p>Track the top 30 coins including BTC, ETH, SOL, BNB, XRP, ADA, DOT, LINK, AVAX, and many more.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127918;</div>
+        <h3>Multi-select Status Bar</h3>
+        <p>Choose up to 10 cryptocurrencies to display simultaneously in your menu bar with live prices and 24h change.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128176;</div>
+        <h3>Smart Price Formatting</h3>
+        <p>Intelligent decimal precision &mdash; 4 decimals for small coins, 1 decimal for high-value assets, with comma separators.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128260;</div>
+        <h3>Auto-Reconnection</h3>
+        <p>Robust connection handling with automatic reconnect on network failures. Your prices always stay up to date.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9889;</div>
+        <h3>Lightweight &amp; Native</h3>
+        <p>Built with Swift and Cocoa. No Electron, no bloat. Runs as a menu bar app with minimal memory and CPU usage.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== LIVE PRICES ==================== -->
+<section class="section" id="prices">
+  <div class="container">
+    <div class="prices-header">
+      <div class="left">
+        <p class="section-label">Live Prices</p>
+        <h2 class="section-title">Real-time from Binance</h2>
+        <p class="section-sub" style="margin-bottom:0">Exactly the same data your status bar app displays.</p>
+      </div>
+      <div class="refresh-info" id="refresh-info">Loading...</div>
+    </div>
+
+    <div class="prices-grid" id="prices-grid">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ==================== HOW IT WORKS ==================== -->
+<section class="section" id="how-it-works">
+  <div class="container">
+    <div class="section-center">
+      <p class="section-label">How It Works</p>
+      <h2 class="section-title">Up and running in seconds</h2>
+      <p class="section-sub">No accounts, no API keys, no setup. Just download and go.</p>
+    </div>
+
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-number">1</div>
+        <h3>Download</h3>
+        <p>Grab the DMG from GitHub Releases or build from source with a single command.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-number">2</div>
+        <h3>Launch</h3>
+        <p>Open the app and it appears in your menu bar. No dock icon, no windows &mdash; pure status bar.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-number">3</div>
+        <h3>Select Coins</h3>
+        <p>Pick up to 10 cryptocurrencies from the menu to track in your status bar with real-time prices.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== DOWNLOAD ==================== -->
+<section class="section download-section" id="download">
+  <div class="container">
+    <div class="download-card">
+      <p class="section-label">Get Started</p>
+      <h2 class="section-title">Download Crypto Price Tracker</h2>
+      <p class="section-sub">Free, open-source, and built for macOS.</p>
+
+      <div class="sys-req">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M12.595 5.996c-.024 2.64 2.317 3.91 2.424 3.968-.019.067-.379 1.298-1.251 2.572-.753 1.1-1.534 2.198-2.764 2.22-1.21.023-1.598-.717-2.981-.717-1.381 0-1.812.694-2.96.74-1.188.044-2.093-1.19-2.852-2.286C.69 10.124-.278 6.78.826 4.482c.546-1.139 1.522-1.862 2.582-1.882 1.167-.022 2.269.784 2.982.784.713 0 2.051-.97 3.457-.828.589.025 2.243.238 3.304 1.79-.085.053-1.972 1.15-1.952 3.434l-.004.217zM10.276 1.73c.63-.765 1.056-1.828.94-2.889-.909.037-2.009.606-2.662 1.37-.586.679-1.099 1.763-.96 2.803.997.077 2.015-.516 2.642-1.28l.04-.004z"/></svg>
+        Requires macOS 13.0 (Ventura) or later
+      </div>
+
+      <div class="download-buttons">
+        <a href="https://github.com/Gamezxz/crypto-price-tracker/releases" target="_blank" rel="noopener" class="btn-primary">
+          <svg class="icon-svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V3h3v5H12L8 12z"/><path d="M13 13H3v1h10v-1z"/></svg>
+          Download DMG
+        </a>
+        <a href="https://github.com/Gamezxz/crypto-price-tracker" target="_blank" rel="noopener" class="btn-secondary">
+          <svg class="icon-svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+
+      <div class="build-source">
+        Or build from source:<br>
+        <code>git clone https://github.com/Gamezxz/crypto-price-tracker.git &amp;&amp; cd crypto-price-tracker &amp;&amp; ./build.sh</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-left">
+      &copy; 2025 <a href="https://github.com/Gamezxz" target="_blank" rel="noopener">Gamezxz</a> &mdash; Crypto Price Tracker
+    </div>
+    <div class="footer-right">
+      Built with Swift &amp; Binance API
+    </div>
+  </div>
+</footer>
+
+<script>
+// ==================== DATA ====================
+const COINS = [
+  { symbol: "BTCUSDT", base: "BTC", name: "Bitcoin", cmcId: 1 },
+  { symbol: "ETHUSDT", base: "ETH", name: "Ethereum", cmcId: 1027 },
+  { symbol: "BNBUSDT", base: "BNB", name: "BNB", cmcId: 1839 },
+  { symbol: "XRPUSDT", base: "XRP", name: "XRP", cmcId: 52 },
+  { symbol: "SOLUSDT", base: "SOL", name: "Solana", cmcId: 5426 },
+  { symbol: "DOGEUSDT", base: "DOGE", name: "Dogecoin", cmcId: 74 },
+  { symbol: "ADAUSDT", base: "ADA", name: "Cardano", cmcId: 2010 },
+  { symbol: "TRXUSDT", base: "TRX", name: "TRON", cmcId: 1958 },
+  { symbol: "LINKUSDT", base: "LINK", name: "Chainlink", cmcId: 1975 },
+  { symbol: "AVAXUSDT", base: "AVAX", name: "Avalanche", cmcId: 5805 },
+  { symbol: "DOTUSDT", base: "DOT", name: "Polkadot", cmcId: 6636 },
+  { symbol: "SUIUSDT", base: "SUI", name: "Sui", cmcId: 20947 },
+  { symbol: "HYPEUSDT", base: "HYPE", name: "Hyperliquid", cmcId: 32196 },
+  { symbol: "PAXGUSDT", base: "PAXG", name: "Pax Gold", cmcId: 4705 },
+  { symbol: "LTCUSDT", base: "LTC", name: "Litecoin", cmcId: 2 },
+  { symbol: "NEARUSDT", base: "NEAR", name: "NEAR Protocol", cmcId: 6535 },
+  { symbol: "APTUSDT", base: "APT", name: "Aptos", cmcId: 21794 },
+  { symbol: "ARBUSDT", base: "ARB", name: "Arbitrum", cmcId: 11841 },
+  { symbol: "OPUSDT", base: "OP", name: "Optimism", cmcId: 11840 },
+  { symbol: "UNIUSDT", base: "UNI", name: "Uniswap", cmcId: 7083 },
+  { symbol: "ATOMUSDT", base: "ATOM", name: "Cosmos", cmcId: 3794 },
+  { symbol: "AAVEUSDT", base: "AAVE", name: "Aave", cmcId: 7278 },
+  { symbol: "XLMUSDT", base: "XLM", name: "Stellar", cmcId: 512 },
+  { symbol: "HBARUSDT", base: "HBAR", name: "Hedera", cmcId: 4642 },
+  { symbol: "FILUSDT", base: "FIL", name: "Filecoin", cmcId: 2280 },
+  { symbol: "INJUSDT", base: "INJ", name: "Injective", cmcId: 7226 },
+  { symbol: "PEPEUSDT", base: "PEPE", name: "Pepe", cmcId: 24478 },
+  { symbol: "BCHUSDT", base: "BCH", name: "Bitcoin Cash", cmcId: 1831 },
+  { symbol: "ETCUSDT", base: "ETC", name: "Ethereum Classic", cmcId: 1321 },
+  { symbol: "ASTERUSDT", base: "ASTER", name: "Aster", cmcId: 36341 }
+];
+
+const FUTURES_ONLY = new Set(["HYPEUSDT"]);
+
+function cmcIcon(id) {
+  return `https://s2.coinmarketcap.com/static/img/coins/64x64/${id}.png`;
+}
+
+function formatPrice(price) {
+  const abs = Math.abs(price);
+  let digits;
+  if (abs < 0.01) digits = 6;
+  else if (abs < 10) digits = 4;
+  else if (abs < 100) digits = 3;
+  else if (abs < 10000) digits = 2;
+  else digits = 1;
+  return price.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function formatChange(change) {
+  const sign = change >= 0 ? '+' : '';
+  return sign + change.toFixed(2) + '%';
+}
+
+// ==================== RENDER PRICE CARDS (SKELETON) ====================
+const pricesGrid = document.getElementById('prices-grid');
+
+function renderSkeletons() {
+  pricesGrid.innerHTML = COINS.map(coin => `
+    <div class="price-card loading" id="card-${coin.symbol}">
+      <img src="${cmcIcon(coin.cmcId)}" alt="${coin.base}" width="32" height="32" loading="lazy" onerror="this.style.display='none'">
+      <div class="coin-info">
+        <div class="coin-name">${coin.name}</div>
+        <div class="coin-symbol">${coin.base}</div>
+      </div>
+      <div class="coin-price-col">
+        <div class="coin-price">$0.00</div>
+        <div class="coin-change">0.00%</div>
+      </div>
+    </div>
+  `).join('');
+}
+renderSkeletons();
+
+// ==================== FETCH PRICES ====================
+let lastUpdate = null;
+
+async function fetchPrices() {
+  try {
+    // Fetch spot prices
+    const spotSymbols = COINS.filter(c => !FUTURES_ONLY.has(c.symbol)).map(c => `"${c.symbol}"`);
+    const spotUrl = `https://api.binance.com/api/v3/ticker/24hr?symbols=[${spotSymbols.join(',')}]`;
+    const spotRes = await fetch(spotUrl);
+    const spotData = await spotRes.json();
+
+    const priceMap = {};
+    for (const t of spotData) {
+      priceMap[t.symbol] = {
+        price: parseFloat(t.lastPrice),
+        change: parseFloat(t.priceChangePercent)
+      };
+    }
+
+    // Fetch futures-only
+    for (const coin of COINS.filter(c => FUTURES_ONLY.has(c.symbol))) {
+      try {
+        const fRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${coin.symbol}`);
+        const fData = await fRes.json();
+        priceMap[coin.symbol] = {
+          price: parseFloat(fData.lastPrice),
+          change: parseFloat(fData.priceChangePercent)
+        };
+      } catch (e) { /* skip */ }
+    }
+
+    // Update cards
+    for (const coin of COINS) {
+      const data = priceMap[coin.symbol];
+      const card = document.getElementById(`card-${coin.symbol}`);
+      if (!card || !data) continue;
+
+      card.classList.remove('loading');
+      const priceEl = card.querySelector('.coin-price');
+      const changeEl = card.querySelector('.coin-change');
+
+      priceEl.textContent = '$' + formatPrice(data.price);
+      changeEl.textContent = formatChange(data.change);
+      changeEl.className = 'coin-change ' + (data.change >= 0 ? 'change-up' : 'change-down');
+    }
+
+    lastUpdate = new Date();
+    updateRefreshInfo();
+    updateMarquee(priceMap);
+  } catch (err) {
+    console.error('Failed to fetch prices:', err);
+  }
+}
+
+function updateRefreshInfo() {
+  const el = document.getElementById('refresh-info');
+  if (lastUpdate) {
+    el.textContent = 'Updated ' + lastUpdate.toLocaleTimeString() + ' · Auto-refreshes every 30s';
+  }
+}
+
+// ==================== MARQUEE ====================
+function updateMarquee(priceMap) {
+  const track = document.getElementById('marquee-track');
+  const items = COINS.slice(0, 15).map(coin => {
+    const data = priceMap[coin.symbol];
+    if (!data) return '';
+    const changeClass = data.change >= 0 ? 'change-up' : 'change-down';
+    return `
+      <div class="marquee-item">
+        <img src="${cmcIcon(coin.cmcId)}" alt="${coin.base}" width="16" height="16" onerror="this.style.display='none'">
+        <span>${coin.base}</span>
+        <span class="price">$${formatPrice(data.price)}</span>
+        <span class="${changeClass}">${formatChange(data.change)}</span>
+      </div>
+    `;
+  }).join('');
+  // Duplicate for seamless loop
+  track.innerHTML = items + items;
+}
+
+// ==================== INIT ====================
+fetchPrices();
+setInterval(fetchPrices, 30000);
+</script>
+
+</body>
+</html>
