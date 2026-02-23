@@ -34,7 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var iconCache: [String: NSImage] = [:]
 
     // Symbols only available on Binance Futures (not on Spot)
-    private let futuresOnlySymbols: Set<String> = ["HYPEUSDT"]
+    private let futuresOnlySymbols: Set<String> = ["HYPEUSDT", "XAUUSDT"]
 
     // Fixed top 30 cryptocurrency list
     private let fixedTopSymbols: [String] = [
@@ -43,7 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "DOTUSDT", "SUIUSDT", "HYPEUSDT", "PAXGUSDT", "LTCUSDT",
         "NEARUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "UNIUSDT",
         "ATOMUSDT", "AAVEUSDT", "XLMUSDT", "HBARUSDT", "FILUSDT",
-        "INJUSDT", "PEPEUSDT", "BCHUSDT", "ETCUSDT", "ASTERUSDT"
+        "INJUSDT", "PEPEUSDT", "BCHUSDT", "ETCUSDT", "ASTERUSDT",
+        "XAUUSDT"
     ]
 
     // CoinMarketCap ID mapping for coin logo icons
@@ -61,7 +62,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "BONK": 23095, "FLOKI": 10804, "WLD": 13502, "SEI": 23149,
         "TRUMP": 35336, "VIRTUAL": 28658, "USUAL": 34403, "PENGU": 35135,
         "KAITO": 36498, "BERA": 35899, "IP": 36785, "LAYER": 33758,
-        "ASTER": 36341, "ZEC": 1684, "USD1": 36148
+        "ASTER": 36341, "ZEC": 1684, "USD1": 36148,
+        "XAU": 8768
     ]
 
     // Known full names for popular coins
@@ -85,7 +87,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         "VIRTUAL": "Virtuals Protocol", "USUAL": "Usual",
         "PENGU": "Pudgy Penguins", "KAITO": "Kaito",
         "BERA": "Berachain", "IP": "Story Protocol", "LAYER": "UniLayer",
-        "ASTER": "Aster", "ZEC": "Zcash", "USD1": "USD1"
+        "ASTER": "Aster", "ZEC": "Zcash", "USD1": "USD1",
+        "XAU": "Gold"
     ]
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
