@@ -25,25 +25,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var statusItem: NSStatusItem?
     var webSocketTask: URLSessionWebSocketTask?
-    var webSocketTaskFutures: URLSessionWebSocketTask?
     var cryptocurrencies: [String: CryptoCurrency] = [:]
     var selectedCryptos: [String] = []
-    var selectedCrypto: String { selectedCryptos.first ?? "BTCUSDT" }
+    var selectedCrypto: String { selectedCryptos.first ?? "BTCUSDC" }
     var reconnectTimer: Timer?
-    var reconnectTimerFutures: Timer?
     var iconCache: [String: NSImage] = [:]
 
-    // Symbols only available on Binance Futures (not on Spot)
-    private let futuresOnlySymbols: Set<String> = ["HYPEUSDT", "XAUUSDT"]
-
-    // Fixed top 30 cryptocurrency list
+    // Fixed top 30 cryptocurrency list (Futures: USDC where available, USDT fallback)
     private let fixedTopSymbols: [String] = [
-        "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
-        "DOGEUSDT", "ADAUSDT", "TRXUSDT", "LINKUSDT", "AVAXUSDT",
-        "DOTUSDT", "SUIUSDT", "HYPEUSDT", "PAXGUSDT", "LTCUSDT",
-        "NEARUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "UNIUSDT",
-        "ATOMUSDT", "AAVEUSDT", "XLMUSDT", "HBARUSDT", "FILUSDT",
-        "INJUSDT", "PEPEUSDT", "BCHUSDT", "ETCUSDT", "ASTERUSDT",
+        "BTCUSDC", "ETHUSDC", "BNBUSDC", "XRPUSDC", "SOLUSDC",
+        "DOGEUSDC", "ADAUSDC", "TRXUSDT", "LINKUSDC", "AVAXUSDC",
+        "DOTUSDT", "SUIUSDC", "HYPEUSDT", "PAXGUSDT", "LTCUSDC",
+        "NEARUSDC", "APTUSDT", "ARBUSDC", "OPUSDT", "UNIUSDC",
+        "ATOMUSDT", "AAVEUSDC", "XLMUSDT", "HBARUSDC", "FILUSDC",
+        "INJUSDT", "PEPEUSDT", "BCHUSDC", "ETCUSDT", "ASTERUSDT",
         "XAUUSDT"
     ]
 
@@ -99,16 +94,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fetchInitialPrices {
             self.downloadAllIcons()
             self.connectToWebSocket()
-            self.connectToFuturesWebSocket()
         }
         print("Loading fixed top 30 cryptocurrencies...")
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
-        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
         reconnectTimer?.invalidate()
-        reconnectTimerFutures?.invalidate()
     }
 
     // MARK: - Status Bar Setup
@@ -190,13 +182,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let name = knownNames[baseSymbol] ?? baseSymbol
             cryptocurrencies[symbol] = CryptoCurrency(symbol: symbol, name: name, emoji: "🪙")
         }
-        if selectedCryptos.isEmpty {
-            selectedCryptos = ["BTCUSDT"]
+        // Load saved selection from UserDefaults
+        if let saved = UserDefaults.standard.stringArray(forKey: "selectedCryptos"),
+           !saved.isEmpty {
+            // Filter out symbols that no longer exist in fixedTopSymbols
+            let valid = saved.filter { fixedTopSymbols.contains($0) }
+            selectedCryptos = valid.isEmpty ? ["BTCUSDC"] : valid
+        } else {
+            selectedCryptos = ["BTCUSDC"]
         }
     }
 
+    private func saveSelectedCryptos() {
+        UserDefaults.standard.set(selectedCryptos, forKey: "selectedCryptos")
+    }
+
     private func extractBaseSymbol(from tradingPair: String) -> String {
-        if tradingPair.hasSuffix("USDT") {
+        if tradingPair.hasSuffix("USDC") || tradingPair.hasSuffix("USDT") {
             return String(tradingPair.dropLast(4))
         }
         return tradingPair
@@ -205,64 +207,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Fetch Initial Prices
 
     private func fetchInitialPrices(completion: @escaping () -> Void) {
-        // Fetch spot prices
-        let spotSymbols = fixedTopSymbols.filter { !futuresOnlySymbols.contains($0) }
-        let symbolsParam = spotSymbols.map { "\"\($0)\"" }.joined(separator: ",")
-        let urlString = "https://api.binance.com/api/v3/ticker/24hr?symbols=[\(symbolsParam)]"
-        guard let encodedString = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: encodedString) else {
-            completion()
-            return
-        }
-
-        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self,
-                  let data = data,
-                  error == nil else {
-                print("Error fetching initial prices: \(error?.localizedDescription ?? "Unknown error")")
-                DispatchQueue.main.async { completion() }
-                return
-            }
-
-            do {
-                guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                    DispatchQueue.main.async { completion() }
-                    return
-                }
-
-                DispatchQueue.main.async {
-                    for item in jsonArray {
-                        guard let symbol = item["symbol"] as? String,
-                              self.cryptocurrencies[symbol] != nil else { continue }
-                        self.cryptocurrencies[symbol]?.price = Double(item["lastPrice"] as? String ?? "0") ?? 0
-                        self.cryptocurrencies[symbol]?.change24h = Double(item["priceChange"] as? String ?? "0") ?? 0
-                        self.cryptocurrencies[symbol]?.changePercent24h = Double(item["priceChangePercent"] as? String ?? "0") ?? 0
-                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
-                    }
-                    self.updateUI()
-
-                    // Fetch futures-only symbols separately
-                    self.fetchFuturesInitialPrices {
-                        completion()
-                    }
-                }
-            } catch {
-                print("Error parsing initial prices JSON: \(error.localizedDescription)")
-                DispatchQueue.main.async { completion() }
-            }
-        }
-        task.resume()
-    }
-
-    private func fetchFuturesInitialPrices(completion: @escaping () -> Void) {
-        let futuresSymbols = fixedTopSymbols.filter { futuresOnlySymbols.contains($0) }
-        guard !futuresSymbols.isEmpty else {
-            completion()
-            return
-        }
-
+        // Fetch all prices from Binance Futures API
         let group = DispatchGroup()
-        for symbol in futuresSymbols {
+        for symbol in fixedTopSymbols {
             guard let url = URL(string: "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)") else { continue }
             group.enter()
             let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
@@ -375,6 +322,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 selectedCryptos.append(symbol)
             }
         }
+        saveSelectedCryptos()
         updateStatusBarForSelectedCrypto()
         updateMenuPrices()
     }
@@ -388,7 +336,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fetchInitialPrices { [weak self] in
             self?.downloadAllIcons()
             self?.connectToWebSocket()
-            self?.connectToFuturesWebSocket()
         }
     }
 
@@ -404,22 +351,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    // MARK: - WebSocket (Spot)
+    // MARK: - WebSocket (Futures)
 
     private func connectToWebSocket() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
 
-        // Only subscribe to spot symbols (exclude futures-only)
-        let spotSymbols = fixedTopSymbols.filter { !futuresOnlySymbols.contains($0) }
-        guard !spotSymbols.isEmpty else {
-            print("No spot symbols to subscribe")
-            return
-        }
+        let streams = fixedTopSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
 
-        let streams = spotSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
-
-        guard let url = URL(string: "wss://stream.binance.com:9443/stream?streams=\(streams)") else {
-            print("Invalid WebSocket URL (Spot)")
+        guard let url = URL(string: "wss://fstream.binance.com/stream?streams=\(streams)") else {
+            print("Invalid WebSocket URL (Futures)")
             return
         }
 
@@ -428,14 +368,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         webSocketTask?.resume()
         receiveMessage()
 
-        print("WebSocket (Spot) connecting for: \(spotSymbols.joined(separator: ", "))")
+        print("WebSocket (Futures) connecting for: \(fixedTopSymbols.joined(separator: ", "))")
     }
 
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
             switch result {
             case .failure(let error):
-                print("WebSocket (Spot) receive error: \(error)")
+                print("WebSocket (Futures) receive error: \(error)")
                 self?.scheduleReconnect()
 
             case .success(let message):
@@ -451,56 +391,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 self?.receiveMessage()
-            }
-        }
-    }
-
-    // MARK: - WebSocket (Futures)
-
-    private func connectToFuturesWebSocket() {
-        webSocketTaskFutures?.cancel(with: .goingAway, reason: nil)
-
-        let futSymbols = fixedTopSymbols.filter { futuresOnlySymbols.contains($0) }
-        guard !futSymbols.isEmpty else {
-            print("No futures symbols to subscribe")
-            return
-        }
-
-        let streams = futSymbols.map { "\($0.lowercased())@ticker" }.joined(separator: "/")
-
-        guard let url = URL(string: "wss://fstream.binance.com/stream?streams=\(streams)") else {
-            print("Invalid WebSocket URL (Futures)")
-            return
-        }
-
-        let session = URLSession(configuration: .default)
-        webSocketTaskFutures = session.webSocketTask(with: url)
-        webSocketTaskFutures?.resume()
-        receiveFuturesMessage()
-
-        print("WebSocket (Futures) connecting for: \(futSymbols.joined(separator: ", "))")
-    }
-
-    private func receiveFuturesMessage() {
-        webSocketTaskFutures?.receive { [weak self] result in
-            switch result {
-            case .failure(let error):
-                print("WebSocket (Futures) receive error: \(error)")
-                self?.scheduleReconnectFutures()
-
-            case .success(let message):
-                switch message {
-                case .string(let text):
-                    self?.processBinanceMessage(text)
-                case .data(let data):
-                    if let text = String(data: data, encoding: .utf8) {
-                        self?.processBinanceMessage(text)
-                    }
-                @unknown default:
-                    break
-                }
-
-                self?.receiveFuturesMessage()
             }
         }
     }
@@ -557,18 +447,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             self.reconnectTimer?.invalidate()
             self.reconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
-                print("Attempting to reconnect Spot WebSocket...")
-                self.connectToWebSocket()
-            }
-        }
-    }
-
-    private func scheduleReconnectFutures() {
-        DispatchQueue.main.async {
-            self.reconnectTimerFutures?.invalidate()
-            self.reconnectTimerFutures = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
                 print("Attempting to reconnect Futures WebSocket...")
-                self.connectToFuturesWebSocket()
+                self.connectToWebSocket()
             }
         }
     }
