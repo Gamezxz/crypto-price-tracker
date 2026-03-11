@@ -4,44 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Crypto Price Tracker is a macOS status bar application that displays real-time cryptocurrency prices from the Binance WebSocket API. The app supports multiple cryptocurrencies including Bitcoin (BTC), Ethereum (ETH), BNB, Cardano (ADA), Solana (SOL), Polkadot (DOT), Chainlink (LINK), and Avalanche (AVAX). The app is built in Swift using Cocoa framework and consists of two main Swift files in a simple architecture.
+Crypto Price Tracker is a macOS status bar application that displays real-time cryptocurrency prices from the Binance WebSocket API. The app tracks the top 30 cryptocurrencies with live price streaming via both Spot and Futures WebSocket connections. Users can select up to 10 coins to display simultaneously in the menu bar. The app is built in Swift using Cocoa framework and consists of two Swift files.
 
 ## Key Build Commands
 
 ### Building the Application
 ```bash
-# Full Xcode build for distribution
-./build.sh
-
-# Direct Swift compilation (without Xcode)
+# Direct Swift compilation as Universal Binary (recommended)
 ./build_with_swiftc.sh
 
-# Quick build test
-./quick_test.sh
+# Full Xcode build (requires Xcode)
+./build.sh
 ```
 
-### Creating Installers
+### Creating DMG Installer
 ```bash
-# Create DMG installer
-./create_installer.sh
-
-# Create PKG installer  
-./create_pkg_installer.sh
-
-# Create sample DMG
-./create_sample_dmg.sh
-
-# Create final DMG with custom styling
-./create_final_dmg.sh
+# Requires: brew install create-dmg
+# After building with build_with_swiftc.sh, create DMG manually:
+create-dmg --volname "Crypto Price Tracker" \
+  --icon "Crypto Price Tracker.app" 150 200 \
+  --app-drop-link 450 200 \
+  "dist/Crypto-Price-Tracker.dmg" "dist/"
 ```
 
 ### Testing
 ```bash
-# Test all build processes
-./quick_test.sh
-
-# Manual app testing
-open "dist/Bitcoin Price Tracker.app"
+open "dist/Crypto Price Tracker.app"
 ```
 
 ## Architecture
@@ -49,85 +37,101 @@ open "dist/Bitcoin Price Tracker.app"
 ### Core Components
 - **main.swift**: Entry point that initializes NSApplication and AppDelegate
 - **AppDelegate.swift**: Main application logic containing:
-  - Multi-cryptocurrency data management
-  - Status bar management with currency selection
-  - WebSocket connection handling for multiple streams
-  - Cryptocurrency price fetching and display
-  - Menu system with currency switching and price display
+  - Fixed top 30 cryptocurrency list management
+  - Status bar with multi-select display (up to 10 coins)
+  - Dual WebSocket connections (Spot + Futures)
+  - CoinMarketCap icon downloading and caching
+  - Smart price formatting with variable decimal precision
 
 ### Key Classes and Methods
-- `CryptoCurrency`: Data structure for cryptocurrency information (symbol, name, emoji, price, lastUpdate)
+- `CryptoCurrency`: Data structure (symbol, name, emoji, price, change24h, changePercent24h, lastUpdate)
 - `AppDelegate`: Main controller class
-  - `initializeCryptocurrencies()`: Initializes supported cryptocurrency list
-  - `setupStatusBar()`: Creates status bar item and menu with multi-currency support
-  - `connectToWebSocket()`: Establishes multi-stream Binance WebSocket connection
-  - `fetchInitialPrices()`: Gets initial prices for all cryptocurrencies via REST API
-  - `selectCryptocurrency()`: Handles currency selection from menu
+  - `initializeCryptocurrencies()`: Initializes the fixed top 30 cryptocurrency list
+  - `setupStatusBar()`: Creates status bar item and menu
+  - `connectToWebSocket()`: Establishes Spot WebSocket connection
+  - `connectToFuturesWebSocket()`: Establishes Futures WebSocket connection (for HYPE etc.)
+  - `fetchInitialPrices()`: Gets initial prices via Binance REST API
+  - `fetchFuturesInitialPrices()`: Gets initial prices for futures-only symbols
+  - `toggleCryptocurrency()`: Toggles coin selection (multi-select, max 10)
+  - `downloadAllIcons()` / `downloadCoinIcon()`: Downloads CoinMarketCap logos
   - `updateUI()`: Updates status bar and menu with current prices
-  - `updateStatusBarForSelectedCrypto()`: Updates status bar for currently selected crypto
-  - `updateMenuPrices()`: Updates all cryptocurrency prices in submenu
+  - `updateStatusBarForSelectedCrypto()`: Renders selected coins with icons in status bar
+  - `updateMenuPrices()`: Updates all prices in the submenu
 
 ### Data Flow
-1. App launches and initializes supported cryptocurrencies (BTC, ETH, BNB, ADA, SOL, DOT, LINK, AVAX)
-2. Sets up status bar with selected cryptocurrency (defaults to Bitcoin)
-3. Fetches initial prices for all cryptocurrencies from Binance REST API
-4. Establishes multi-stream WebSocket connection to Binance for real-time updates
-5. Processes incoming price data for each cryptocurrency and updates UI
-6. User can select different cryptocurrencies from "All Cryptocurrencies" submenu
-7. Auto-reconnects on connection failures
+1. App launches and initializes 30 cryptocurrencies from `fixedTopSymbols`
+2. Sets up status bar (defaults to BTC selected)
+3. Fetches initial prices from Binance REST API (Spot + Futures)
+4. Downloads CoinMarketCap icons for all coins
+5. Establishes dual WebSocket connections for real-time streaming
+6. Processes incoming price/change data and updates UI
+7. User can toggle up to 10 coins from "All Cryptocurrencies" submenu
+8. Auto-reconnects on connection failures (5-second delay)
 
 ### WebSocket Integration
-- **Endpoint**: `wss://stream.binance.com:9443/stream?streams=btcusdt@ticker/ethusdt@ticker/bnbusdt@ticker/adausdt@ticker/solusdt@ticker/dotusdt@ticker/linkusdt@ticker/avaxusdt@ticker`
-- **Multi-stream format**: Handles stream-specific data with `stream` and `data` fields
-- **Price field**: Uses `c` field from ticker data (current price)
-- **Symbol extraction**: Extracts currency symbol from stream name
+- **Spot**: `wss://stream.binance.com:9443/stream?streams=btcusdt@ticker/ethusdt@ticker/...`
+- **Futures**: `wss://fstream.binance.com/stream?streams=hypeusdt@ticker/...`
+- **Futures-only symbols**: `HYPEUSDT` (not available on Spot)
+- **Multi-stream format**: Handles `stream` and `data` fields
+- **Price fields**: `c` (current price), `P` (24h change %), `p` (24h change absolute)
 - **Auto-reconnection**: 5-second delay on connection failures
 
 ## Project Structure
 
-### Build Outputs
-- `build/`: Xcode build artifacts
-- `build_swift/`: Swift compiler build output  
-- `dist/`: Final distribution files
-- `pkg_temp/`: Temporary PKG installer files
+```
+├── AppDelegate.swift          # Main app logic (30 coins, dual WebSocket, icons)
+├── main.swift                 # Entry point
+├── Assets.xcassets/           # App icon set (16x16 to 1024x1024)
+├── BitcoinPriceStatusBar.xcodeproj/  # Xcode project
+├── build.sh                   # Xcode build script
+├── build_with_swiftc.sh       # Swift compiler build (Universal Binary)
+├── index.html                 # Landing page (GitHub Pages)
+├── logo.png                   # App logo for website
+├── new_ss.png                 # App screenshot
+├── README.md
+├── CLAUDE.md
+├── LICENSE
+└── .gitignore
+```
 
-### Configuration Files
-- `Info.plist`: Main app configuration
-- `Info-Debug.plist`: Debug build configuration
-- `ExportOptions.plist`: Xcode export settings
-- `BitcoinPriceStatusBar.xcodeproj/`: Xcode project file
+### Build Outputs (gitignored)
+- `build/`: Xcode build artifacts
+- `build_swift/`: Swift compiler build output
+- `dist/`: Final distribution files (app bundle, DMG)
 
 ### Build Requirements
 - **macOS 13.0+** (deployment target)
-- **Xcode** with Swift 5.0+
-- **create-dmg** (install via `brew install create-dmg`)
-- **Python 3 with Pillow** (for icon generation)
+- **Xcode** with Swift 5.0+ (for build.sh) or just **swiftc** (for build_with_swiftc.sh)
+- **create-dmg** (optional, `brew install create-dmg`) for DMG creation
 
 ### App Naming
-- **Bundle ID**: com.crypto.pricetracker (updated from com.bitcoin.pricetracker)
-- **Display Name**: "Crypto Price Tracker" (updated from "Bitcoin Price Tracker")
-- **Internal Project**: Still uses "BitcoinPriceStatusBar" for backwards compatibility
+- **Bundle ID**: com.crypto.pricetracker
+- **Display Name**: "Crypto Price Tracker"
+- **Internal Project**: "BitcoinPriceStatusBar" (legacy name)
+
+## Supported Cryptocurrencies (Top 30)
+
+BTC, ETH, BNB, XRP, SOL, DOGE, ADA, TRX, LINK, AVAX, DOT, SUI, HYPE, PAXG, LTC, NEAR, APT, ARB, OP, UNI, ATOM, AAVE, XLM, HBAR, FIL, INJ, PEPE, BCH, ETC, ASTER
+
+Icons are fetched from CoinMarketCap using `knownCMCIds` mapping.
 
 ## Development Notes
 
-### Supported Cryptocurrencies
-- **Bitcoin (BTC)**: ₿ emoji, BTCUSDT symbol
-- **Ethereum (ETH)**: Ξ emoji, ETHUSDT symbol  
-- **BNB**: 🔸 emoji, BNBUSDT symbol
-- **Cardano (ADA)**: 🅰️ emoji, ADAUSDT symbol
-- **Solana (SOL)**: ◎ emoji, SOLUSDT symbol
-- **Polkadot (DOT)**: 🔴 emoji, DOTUSDT symbol
-- **Chainlink (LINK)**: 🔗 emoji, LINKUSDT symbol
-- **Avalanche (AVAX)**: 🔺 emoji, AVAXUSDT symbol
-
 ### Status Bar Application Pattern
-This is a menu bar app (LSUIElement = true) with no dock icon. The app lives entirely in the status bar and provides a dropdown menu for cryptocurrency selection and price viewing. The status bar displays the currently selected cryptocurrency with its emoji and price.
+Menu bar app (LSUIElement = true) with no dock icon. Lives entirely in the status bar with a dropdown menu for coin selection and price viewing.
 
-### Multi-Currency Architecture
-The app uses a `CryptoCurrency` struct to manage multiple currencies and maintains a dictionary of all supported cryptocurrencies. Users can switch between currencies using the "All Cryptocurrencies" submenu, with the selected currency marked with a checkmark.
-
-### WebSocket Reliability
-The app implements robust WebSocket handling with automatic reconnection, initial REST API fallback for all currencies, and error handling for network issues. The multi-stream WebSocket connection efficiently receives updates for all supported cryptocurrencies simultaneously.
+### Multi-Select Display
+Users can select up to 10 coins to display simultaneously in the status bar, separated by ` | `. Each coin shows its CoinMarketCap icon, price, and 24h change percentage.
 
 ### Price Formatting
-Uses NumberFormatter with comma separators and 2 decimal places for consistent price display across status bar and menu items. Each cryptocurrency displays with its unique emoji for easy identification.
+Smart decimal precision based on price magnitude:
+- < $10: 4 decimal places
+- < $100: 3 decimal places
+- < $10,000: 2 decimal places
+- >= $10,000: 1 decimal place
+
+### Landing Page
+`index.html` is a self-contained landing page deployed via GitHub Pages at https://gamezxz.github.io/crypto-price-tracker/. It fetches live prices from Binance REST API and auto-refreshes every 30 seconds. Design uses dark mode with glassmorphism (see `.claude/skills/openusage-design.md`).
+
+### GitHub Releases
+DMG installers are published at https://github.com/Gamezxz/crypto-price-tracker/releases. Built as Universal Binary (arm64 + x86_64).

@@ -97,20 +97,43 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 </plist>
 EOF
 
-echo "🔨 Compiling Swift code..."
+echo "🔨 Compiling Swift code (Universal Binary: arm64 + x86_64)..."
 
-# Compile Swift files
-swiftc -o "$APP_BUNDLE/Contents/MacOS/BitcoinPriceTracker" \
-    -target x86_64-apple-macosx13.0 \
+# Compile for arm64 (Apple Silicon)
+swiftc -o "$BUILD_DIR/BitcoinPriceTracker-arm64" \
+    -target arm64-apple-macosx13.0 \
+    -O \
     -framework Cocoa \
     -framework Foundation \
     main.swift \
     AppDelegate.swift
 
 if [ $? -ne 0 ]; then
-    echo "❌ Swift compilation failed"
+    echo "❌ arm64 compilation failed"
     exit 1
 fi
+
+# Compile for x86_64 (Intel)
+swiftc -o "$BUILD_DIR/BitcoinPriceTracker-x86_64" \
+    -target x86_64-apple-macosx13.0 \
+    -O \
+    -framework Cocoa \
+    -framework Foundation \
+    main.swift \
+    AppDelegate.swift
+
+if [ $? -ne 0 ]; then
+    echo "❌ x86_64 compilation failed"
+    exit 1
+fi
+
+# Combine into Universal Binary
+lipo -create \
+    "$BUILD_DIR/BitcoinPriceTracker-arm64" \
+    "$BUILD_DIR/BitcoinPriceTracker-x86_64" \
+    -output "$APP_BUNDLE/Contents/MacOS/BitcoinPriceTracker"
+
+echo "✅ Universal Binary created"
 
 echo "🎨 Adding app icon..."
 

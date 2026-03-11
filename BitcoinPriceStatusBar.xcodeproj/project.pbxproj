@@ -17,6 +17,7 @@
 		26F675445AF9407E838328CB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		1EA2C30A708F4731981ECBA8 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		1002E7AF060040DCABBC413C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E1F2A3B4C5D6E7F8A9B0C1D2 /* BitcoinPriceStatusBar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BitcoinPriceStatusBar.entitlements; sourceTree = "<group>"; };
 		A00596F6B5BD4AE5A538564D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -37,6 +38,7 @@
 				1EA2C30A708F4731981ECBA8 /* main.swift */,
 				26F675445AF9407E838328CB /* AppDelegate.swift */,
 				1002E7AF060040DCABBC413C /* Info.plist */,
+				E1F2A3B4C5D6E7F8A9B0C1D2 /* BitcoinPriceStatusBar.entitlements */,
 				A00596F6B5BD4AE5A538564D /* Assets.xcassets */,
 				4DEFF488F0B444A48D427EFC /* Products */,
 			);
@@ -53,7 +55,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		6C645FE5D458491C97D57CCC /* BitcoinPriceStatusBar */ = {
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* BitcoinPriceStatusBar */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 28FFBD871F9B485B8EDA617D /* Build configuration list for PBXNativeTarget "BitcoinPriceStatusBar" */;
 			buildPhases = (
@@ -80,7 +82,7 @@
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
-					6C645FE5D458491C97D57CCC = {
+					A1B2C3D4E5F6A7B8C9D0E1F2 = {
 						CreatedOnToolsVersion = 15.0;
 						LastSwiftMigration = 1500;
 					};
@@ -99,7 +101,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				6C645FE5D458491C97D57CCC /* BitcoinPriceStatusBar */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* BitcoinPriceStatusBar */,
 			);
 		};
 /* End PBXProject section */
@@ -251,11 +253,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = BitcoinPriceStatusBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = DYJAX3728R;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -278,11 +280,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = BitcoinPriceStatusBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = DYJAX3728R;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
