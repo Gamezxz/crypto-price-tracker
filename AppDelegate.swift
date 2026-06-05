@@ -442,9 +442,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func addCoin() {
         let alert = NSAlert()
         alert.messageText = "Add Cryptocurrency"
-        alert.informativeText = "Enter a ticker (e.g. DOGE) or a full pair (e.g. DOGEUSDT). Supports both Spot and Futures."
+        alert.informativeText = "Enter a ticker (e.g. DOGE) or a full pair (e.g. DOGEUSDT). Spot is checked first, then Futures."
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Search")
         alert.addButton(withTitle: "Cancel")
 
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
@@ -468,68 +468,88 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Build candidate pairs
+        // Build candidates: Spot first, then Futures
         let candidates: [(pair: String, market: String)]
         if raw.hasSuffix("USDC") || raw.hasSuffix("USDT") {
-            // User specified exact pair — try Futures first, then Spot
-            candidates = [(raw, "futures"), (raw, "spot")]
+            candidates = [(raw, "spot"), (raw, "futures")]
         } else {
-            // User typed just ticker — try: Futures USDC → Futures USDT → Spot USDT
             candidates = [
+                ("\(raw)USDT", "spot"),
                 ("\(raw)USDC", "futures"),
-                ("\(raw)USDT", "futures"),
-                ("\(raw)USDT", "spot")
+                ("\(raw)USDT", "futures")
             ]
         }
 
-        resolveAndAddSymbol(candidates: candidates, original: raw)
+        resolveAvailablePairs(candidates: candidates, original: raw)
     }
 
-    /// Tries each candidate in order and adds the first valid one.
-    private func resolveAndAddSymbol(candidates: [(pair: String, market: String)], original: String) {
-        guard let (symbol, market) = candidates.first else {
-            showAddError(original)
-            return
-        }
-        let rest = Array(candidates.dropFirst())
+    /// Queries all candidates in parallel, then lets the user pick if multiple are found.
+    private func resolveAvailablePairs(candidates: [(pair: String, market: String)], original: String) {
+        let group = DispatchGroup()
+        var results: [(symbol: String, market: String, price: Double, changePercent: Double, change24h: Double)] = []
 
-        let endpoint: String
-        if market == "futures" {
-            endpoint = "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)"
-        } else {
-            endpoint = "https://api.binance.com/api/v3/ticker/24hr?symbol=\(symbol)"
+        for (symbol, market) in candidates {
+            let endpoint = market == "futures"
+                ? "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)"
+                : "https://api.binance.com/api/v3/ticker/24hr?symbol=\(symbol)"
+
+            guard let url = URL(string: endpoint) else { continue }
+            group.enter()
+            let task = URLSession.shared.dataTask(with: url) { data, _, error in
+                defer { group.leave() }
+                guard let data = data, error == nil,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let priceString = json["lastPrice"] as? String,
+                      let price = Double(priceString) else { return }
+                let cp = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
+                let c24 = Double(json["priceChange"] as? String ?? "0") ?? 0.0
+                results.append((symbol, market, price, cp, c24))
+            }
+            task.resume()
         }
 
-        guard let url = URL(string: endpoint) else {
-            resolveAndAddSymbol(candidates: rest, original: original)
-            return
-        }
-
-        let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+        group.notify(queue: .main) { [weak self] in
             guard let self = self else { return }
-            var price: Double? = nil
-            var changePercent = 0.0
-            var change24h = 0.0
-            if let data = data, error == nil,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let priceString = json["lastPrice"] as? String,
-               let p = Double(priceString) {
-                price = p
-                changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
-                change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
-            }
+            let unique = Dictionary(grouping: results, by: { $0.symbol })
+                .compactMap { $0.value.first }
 
-            DispatchQueue.main.async {
-                if let price = price {
-                    self.commitAddSymbol(symbol, market: market, price: price, change24h: change24h, changePercent: changePercent)
-                } else if !rest.isEmpty {
-                    self.resolveAndAddSymbol(candidates: rest, original: original)
-                } else {
-                    self.showAddError(original)
-                }
+            if unique.isEmpty {
+                self.showAddError(original)
+            } else if unique.count == 1, let first = unique.first {
+                // Only one pair found — add directly
+                self.commitAddSymbol(first.symbol, market: first.market,
+                    price: first.price, change24h: first.change24h,
+                    changePercent: first.changePercent)
+            } else {
+                // Multiple pairs found — let user choose
+                self.showMarketPicker(options: unique, original: original)
             }
         }
-        task.resume()
+    }
+
+    /// Shows a dialog letting the user pick which market to use.
+    private func showMarketPicker(options: [(symbol: String, market: String, price: Double, changePercent: Double, change24h: Double)], original: String) {
+        let alert = NSAlert()
+        alert.messageText = "'\(original)' found on multiple markets"
+        alert.informativeText = "Choose which one to add:"
+        alert.alertStyle = .informational
+
+        for opt in options {
+            let marketLabel = opt.market == "spot" ? "🟢 Spot" : "🟡 Futures"
+            let pairLabel = opt.symbol
+            let priceLabel = formatPrice(opt.price)
+            alert.addButton(withTitle: "\(marketLabel)  \(pairLabel)  —  $\(priceLabel)")
+        }
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        // First button = .alertFirstButtonReturn (1000), second = 1001, etc.
+        let idx = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        guard idx >= 0, idx < options.count else { return }
+        let chosen = options[Int(idx)]
+        self.commitAddSymbol(chosen.symbol, market: chosen.market,
+            price: chosen.price, change24h: chosen.change24h,
+            changePercent: chosen.changePercent)
     }
 
     private func commitAddSymbol(_ symbol: String, market: String, price: Double, change24h: Double, changePercent: Double) {
