@@ -274,40 +274,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Returns the REST URL for the given symbol based on its market.
     private func restURL(for symbol: String) -> URL? {
         let market = symbolMarket[symbol] ?? "spot"
-        if market == "futures" {
+        switch market {
+        case "futures":
             return URL(string: "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)")
-        } else {
+        case "stock":
+            return URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1d&range=5d")
+        default:
             return URL(string: "https://api.binance.com/api/v3/ticker/24hr?symbol=\(symbol)")
         }
+    }
+
+    /// Yahoo Finance request with required User-Agent
+    private func yahooRequest(for symbol: String) -> URLRequest {
+        var req = URLRequest(url: URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1d&range=5d")!)
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 15)", forHTTPHeaderField: "User-Agent")
+        return req
+    }
+
+    /// Parse a price response — handles both Binance JSON and Yahoo Finance JSON
+    private func parsePriceResponse(data: Data, symbol: String) -> (price: Double, change24h: Double, changePercent24h: Double)? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        // Binance format: {"lastPrice": "...", "priceChangePercent": "...", "priceChange": "..."}
+        if let priceString = json["lastPrice"] as? String, let price = Double(priceString) {
+            let cp = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
+            let c24 = Double(json["priceChange"] as? String ?? "0") ?? 0.0
+            return (price, c24, cp)
+        }
+
+        // Yahoo Finance format: {"chart": {"result": [{"meta": {...}}]}}
+        if let chart = json["chart"] as? [String: Any],
+           let result = (chart["result"] as? [Any])?.first as? [String: Any],
+           let meta = result["meta"] as? [String: Any],
+           let price = meta["regularMarketPrice"] as? Double {
+            let prevClose = meta["chartPreviousClose"] as? Double ?? price
+            let change = price - prevClose
+            let changePct = prevClose != 0 ? (change / prevClose) * 100 : 0.0
+            return (price, change, changePct)
+        }
+
+        return nil
     }
 
     private func fetchInitialPrices(completion: @escaping () -> Void) {
         let group = DispatchGroup()
         for symbol in trackedSymbols {
-            guard let url = restURL(for: symbol) else { continue }
             group.enter()
-            let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-                defer { group.leave() }
-                guard let self = self, let data = data, error == nil else {
-                    print("Error fetching price for \(symbol): \(error?.localizedDescription ?? "Unknown")")
-                    return
-                }
-                do {
-                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let priceString = json["lastPrice"] as? String,
-                       let price = Double(priceString) {
-                        let changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
-                        let change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
-                        DispatchQueue.main.async {
-                            self.cryptocurrencies[symbol]?.price = price
-                            self.cryptocurrencies[symbol]?.change24h = change24h
-                            self.cryptocurrencies[symbol]?.changePercent24h = changePercent
-                            self.cryptocurrencies[symbol]?.lastUpdate = Date()
-                            self.updateUI()
-                        }
+            let market = symbolMarket[symbol] ?? "spot"
+            let task: URLSessionDataTask
+            if market == "stock" {
+                task = URLSession.shared.dataTask(with: yahooRequest(for: symbol)) { [weak self] data, _, error in
+                    defer { group.leave() }
+                    guard let self = self, let data = data, error == nil,
+                          let parsed = self.parsePriceResponse(data: data, symbol: symbol) else {
+                        print("Error fetching stock price for \(symbol)")
+                        return
                     }
-                } catch {
-                    print("Error parsing JSON for \(symbol): \(error)")
+                    DispatchQueue.main.async {
+                        self.cryptocurrencies[symbol]?.price = parsed.price
+                        self.cryptocurrencies[symbol]?.change24h = parsed.change24h
+                        self.cryptocurrencies[symbol]?.changePercent24h = parsed.changePercent24h
+                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                        self.updateUI()
+                    }
+                }
+            } else {
+                guard let url = restURL(for: symbol) else { group.leave(); continue }
+                task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+                    defer { group.leave() }
+                    guard let self = self, let data = data, error == nil,
+                          let parsed = self.parsePriceResponse(data: data, symbol: symbol) else {
+                        print("Error fetching price for \(symbol)")
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        self.cryptocurrencies[symbol]?.price = parsed.price
+                        self.cryptocurrencies[symbol]?.change24h = parsed.change24h
+                        self.cryptocurrencies[symbol]?.changePercent24h = parsed.changePercent24h
+                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                        self.updateUI()
+                    }
                 }
             }
             task.resume()
@@ -328,21 +374,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func pollPrices() {
         for symbol in trackedSymbols {
-            guard let url = restURL(for: symbol) else { continue }
-            let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-                guard let self = self,
-                      let data = data, error == nil,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let priceString = json["lastPrice"] as? String,
-                      let price = Double(priceString) else { return }
-                let changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
-                let change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
-                DispatchQueue.main.async {
-                    self.cryptocurrencies[symbol]?.price = price
-                    self.cryptocurrencies[symbol]?.change24h = change24h
-                    self.cryptocurrencies[symbol]?.changePercent24h = changePercent
-                    self.cryptocurrencies[symbol]?.lastUpdate = Date()
-                    self.updateUI()
+            let market = symbolMarket[symbol] ?? "spot"
+            let task: URLSessionDataTask
+            if market == "stock" {
+                task = URLSession.shared.dataTask(with: yahooRequest(for: symbol)) { [weak self] data, _, error in
+                    guard let self = self, let data = data, error == nil,
+                          let parsed = self.parsePriceResponse(data: data, symbol: symbol) else { return }
+                    DispatchQueue.main.async {
+                        self.cryptocurrencies[symbol]?.price = parsed.price
+                        self.cryptocurrencies[symbol]?.change24h = parsed.change24h
+                        self.cryptocurrencies[symbol]?.changePercent24h = parsed.changePercent24h
+                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                        self.updateUI()
+                    }
+                }
+            } else {
+                guard let url = restURL(for: symbol) else { continue }
+                task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+                    guard let self = self, let data = data, error == nil,
+                          let parsed = self.parsePriceResponse(data: data, symbol: symbol) else { return }
+                    DispatchQueue.main.async {
+                        self.cryptocurrencies[symbol]?.price = parsed.price
+                        self.cryptocurrencies[symbol]?.change24h = parsed.change24h
+                        self.cryptocurrencies[symbol]?.changePercent24h = parsed.changePercent24h
+                        self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                        self.updateUI()
+                    }
                 }
             }
             task.resume()
@@ -491,7 +548,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Build candidates: Spot first, then Futures
+        // Build candidates: Spot → Futures → Stock (Yahoo Finance)
         let candidates: [(pair: String, market: String)]
         if raw.hasSuffix("USDC") || raw.hasSuffix("USDT") {
             candidates = [(raw, "spot"), (raw, "futures")]
@@ -499,7 +556,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             candidates = [
                 ("\(raw)USDT", "spot"),
                 ("\(raw)USDC", "futures"),
-                ("\(raw)USDT", "futures")
+                ("\(raw)USDT", "futures"),
+                (raw, "stock")      // last resort: try Yahoo Finance
             ]
         }
 
@@ -512,21 +570,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         var results: [(symbol: String, market: String, price: Double, changePercent: Double, change24h: Double)] = []
 
         for (symbol, market) in candidates {
-            let endpoint = market == "futures"
-                ? "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)"
-                : "https://api.binance.com/api/v3/ticker/24hr?symbol=\(symbol)"
-
-            guard let url = URL(string: endpoint) else { continue }
+            let request: URLRequest
+            if market == "stock" {
+                request = yahooRequest(for: symbol)
+            } else {
+                let endpoint = market == "futures"
+                    ? "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=\(symbol)"
+                    : "https://api.binance.com/api/v3/ticker/24hr?symbol=\(symbol)"
+                guard let url = URL(string: endpoint) else { continue }
+                request = URLRequest(url: url)
+            }
             group.enter()
-            let task = URLSession.shared.dataTask(with: url) { data, _, error in
+            let task = URLSession.shared.dataTask(with: request) { data, _, error in
                 defer { group.leave() }
                 guard let data = data, error == nil,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let priceString = json["lastPrice"] as? String,
-                      let price = Double(priceString) else { return }
-                let cp = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
-                let c24 = Double(json["priceChange"] as? String ?? "0") ?? 0.0
-                results.append((symbol, market, price, cp, c24))
+                      let parsed = self.parsePriceResponse(data: data, symbol: symbol) else { return }
+                results.append((symbol, market, parsed.price, parsed.changePercent24h, parsed.change24h))
             }
             task.resume()
         }
@@ -558,7 +617,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .informational
 
         for opt in options {
-            let marketLabel = opt.market == "spot" ? "🟢 Spot" : "🟡 Futures"
+            let marketLabel: String
+            switch opt.market {
+            case "spot":    marketLabel = "🟢 Spot"
+            case "futures": marketLabel = "🟡 Futures"
+            case "stock":   marketLabel = "📈 Stock"
+            default:        marketLabel = opt.market
+            }
             let pairLabel = opt.symbol
             let priceLabel = formatPrice(opt.price)
             alert.addButton(withTitle: "\(marketLabel)  \(pairLabel)  —  $\(priceLabel)")
@@ -896,7 +961,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let priceString = formatPrice(crypto.price)
                 let changeString = formatPercentChange(crypto.changePercent24h)
                 let isSelected = selectedCryptos.contains(symbol) ? " ✓" : ""
-                let marketLabel = symbolMarket[symbol] == "futures" ? " [F]" : ""
+                let marketLabel: String
+                switch symbolMarket[symbol] {
+                case "futures": marketLabel = " [F]"
+                case "stock":   marketLabel = " [📈]"
+                default:        marketLabel = ""
+                }
                 item.title = "\(crypto.name)\(marketLabel): $\(priceString) \(changeString)\(isSelected)"
 
                 if let icon = iconCache[symbol] {
