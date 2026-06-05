@@ -360,20 +360,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func downloadCoinIcon(symbol: String) {
         let baseSymbol = extractBaseSymbol(from: symbol)
-        guard let cmcId = knownCMCIds[baseSymbol] else {
-            print("No CMC ID for \(baseSymbol), using emoji fallback")
+
+        // Build a chain of fallback icon URLs — tries each until one succeeds
+        let urls: [URL] = {
+            var list: [URL] = []
+            // 1) CoinMarketCap (if ID known)
+            if let cmcId = knownCMCIds[baseSymbol] {
+                list.append(URL(string: "https://s2.coinmarketcap.com/static/img/coins/64x64/\(cmcId).png")!)
+            }
+            // 2) CoinCap CDN — works for nearly all assets including commodities
+            list.append(URL(string: "https://assets.coincap.io/assets/icons/\(baseSymbol.lowercased())@2x.png")!)
+            // 3) Binance own CDN (legacy format)
+            list.append(URL(string: "https://bin.bnbstatic.com/image/client/app/app_pure/\(baseSymbol.lowercased())_light.png")!)
+            return list.filter { $0.absoluteString.hasPrefix("https://") }
+        }()
+
+        guard !urls.isEmpty else { return }
+
+        tryDownloadIcon(urls: urls, symbol: symbol)
+    }
+
+    /// Tries each URL in order until one downloads successfully.
+    private func tryDownloadIcon(urls: [URL], symbol: String) {
+        guard let url = urls.first else {
+            print("All icon sources failed for \(symbol)")
             return
         }
-
-        let urlString = "https://s2.coinmarketcap.com/static/img/coins/64x64/\(cmcId).png"
-        guard let url = URL(string: urlString) else { return }
+        let rest = Array(urls.dropFirst())
 
         let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self,
                   let data = data,
                   error == nil,
                   let image = NSImage(data: data) else {
-                print("Failed to download icon for \(baseSymbol)")
+                // Try next fallback
+                DispatchQueue.main.async {
+                    self?.tryDownloadIcon(urls: rest, symbol: symbol)
+                }
                 return
             }
 
