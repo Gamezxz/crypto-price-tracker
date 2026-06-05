@@ -417,18 +417,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func downloadCoinIcon(symbol: String) {
         let baseSymbol = extractBaseSymbol(from: symbol)
+        let market = symbolMarket[symbol] ?? "spot"
 
         // Build a chain of fallback icon URLs — tries each until one succeeds
         let urls: [URL] = {
             var list: [URL] = []
-            // 1) CoinMarketCap (if ID known)
-            if let cmcId = knownCMCIds[baseSymbol] {
-                list.append(URL(string: "https://s2.coinmarketcap.com/static/img/coins/64x64/\(cmcId).png")!)
+            if market == "stock" {
+                // Stock-specific sources
+                list.append(URL(string: "https://financialmodelingprep.com/image-stock/\(symbol).png")!)
+            } else {
+                // 1) CoinMarketCap (if ID known)
+                if let cmcId = knownCMCIds[baseSymbol] {
+                    list.append(URL(string: "https://s2.coinmarketcap.com/static/img/coins/64x64/\(cmcId).png")!)
+                }
+                // 2) CoinCap CDN — works for nearly all assets including commodities
+                list.append(URL(string: "https://assets.coincap.io/assets/icons/\(baseSymbol.lowercased())@2x.png")!)
+                // 3) Binance own CDN
+                list.append(URL(string: "https://bin.bnbstatic.com/image/client/app/app_pure/\(baseSymbol.lowercased())_light.png")!)
             }
-            // 2) CoinCap CDN — works for nearly all assets including commodities
-            list.append(URL(string: "https://assets.coincap.io/assets/icons/\(baseSymbol.lowercased())@2x.png")!)
-            // 3) Binance own CDN (legacy format)
-            list.append(URL(string: "https://bin.bnbstatic.com/image/client/app/app_pure/\(baseSymbol.lowercased())_light.png")!)
             return list.filter { $0.absoluteString.hasPrefix("https://") }
         }()
 
