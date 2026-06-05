@@ -527,8 +527,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func addCoin() {
         let alert = NSAlert()
-        alert.messageText = "Add Cryptocurrency"
-        alert.informativeText = "Enter a ticker (e.g. DOGE) or a full pair (e.g. DOGEUSDT). Spot is checked first, then Futures."
+        alert.messageText = "Add Asset"
+        alert.informativeText = """
+        Enter a ticker symbol. Supported types:
+
+        • Crypto (Spot/Futures): BTC, ETH, SOL, DOGE, HYPE …
+        • Stock (US Market): AAPL, TSLA, NVDA, MSFT, AMZN …
+        • Commodity / Synthetic: XAUUSDT (Gold), XAGUSDT (Silver) …
+
+        Just type the base ticker — we'll find the right market automatically.
+        """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Search")
         alert.addButton(withTitle: "Cancel")
