@@ -35,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var futuresReconnectTimer: Timer?
     var spotReconnectTimer: Timer?
+    var pollTimer: Timer?
 
     var iconCache: [String: NSImage] = [:]
 
@@ -102,6 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.downloadAllIcons()
             self.connectToSpotWebSocket()
             self.connectToFuturesWebSocket()
+            self.startPolling()
         }
         print("Loading \(trackedSymbols.count) cryptocurrencies...")
     }
@@ -111,6 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         spotWebSocketTask?.cancel(with: .goingAway, reason: nil)
         futuresReconnectTimer?.invalidate()
         spotReconnectTimer?.invalidate()
+        pollTimer?.invalidate()
     }
 
     // MARK: - Status Bar Setup
@@ -311,6 +314,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         group.notify(queue: .main) {
             completion()
+        }
+    }
+
+    // MARK: - REST Polling (safety net — keeps prices fresh even if WebSocket hiccups)
+
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.pollPrices()
+        }
+    }
+
+    private func pollPrices() {
+        for symbol in trackedSymbols {
+            guard let url = restURL(for: symbol) else { continue }
+            let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+                guard let self = self,
+                      let data = data, error == nil,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let priceString = json["lastPrice"] as? String,
+                      let price = Double(priceString) else { return }
+                let changePercent = Double(json["priceChangePercent"] as? String ?? "0") ?? 0.0
+                let change24h = Double(json["priceChange"] as? String ?? "0") ?? 0.0
+                DispatchQueue.main.async {
+                    self.cryptocurrencies[symbol]?.price = price
+                    self.cryptocurrencies[symbol]?.change24h = change24h
+                    self.cryptocurrencies[symbol]?.changePercent24h = changePercent
+                    self.cryptocurrencies[symbol]?.lastUpdate = Date()
+                    self.updateUI()
+                }
+            }
+            task.resume()
         }
     }
 
