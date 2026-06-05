@@ -9,6 +9,9 @@ APP_NAME="Crypto Price Tracker"
 BUILD_DIR="build_swift"
 DIST_DIR="dist"
 BUNDLE_ID="com.crypto.pricetracker"
+DEVELOPER_ID="Developer ID Application: Viriya Langkaviket (DYJAX3728R)"
+TEAM_ID="DYJAX3728R"
+NOTARIZE_PROFILE="notarization"  # created via: xcrun notarytool store-credentials
 
 echo "🚀 Building Crypto Price Tracker with Swift compiler..."
 
@@ -173,6 +176,48 @@ echo "📦 Copying to dist folder..."
 
 # Copy to dist folder
 cp -R "$APP_BUNDLE" "$DIST_DIR/"
+
+# --- Code Signing & Notarization ---
+if [ -n "$DEVELOPER_ID" ] && security find-identity -v -p basic 2>/dev/null | grep -q "$DEVELOPER_ID"; then
+    echo "🔐 Signing with Developer ID..."
+    codesign --sign "$DEVELOPER_ID" \
+        --timestamp \
+        --options runtime \
+        --force \
+        --deep \
+        "$DIST_DIR/${APP_NAME}.app"
+
+    echo "✅ Signature verified:"
+    codesign -dvvv "$DIST_DIR/${APP_NAME}.app" 2>&1 | grep -E "Identifier|Authority|Runtime"
+
+    echo "📦 Creating DMG..."
+    DMG_PATH="$DIST_DIR/Crypto-Price-Tracker.dmg"
+    rm -f "$DMG_PATH"
+    hdiutil create -volname "Crypto Price Tracker" \
+        -srcfolder "$DIST_DIR/${APP_NAME}.app" \
+        -ov -format UDZO \
+        "$DMG_PATH" >/dev/null 2>&1
+
+    if [ -n "$NOTARIZE_PROFILE" ]; then
+        echo "📤 Submitting for notarization..."
+        xcrun notarytool submit "$DMG_PATH" \
+            --keychain-profile "$NOTARIZE_PROFILE" \
+            --wait 2>&1 | tail -4
+
+        echo "📎 Stapling notarization ticket..."
+        xcrun stapler staple "$DMG_PATH" 2>&1
+
+        echo ""
+        echo "  ✅ Notarized & ready for distribution!"
+        echo "  📁 DMG: ${DMG_PATH}"
+    else
+        echo "  ⚠️  NOTARIZE_PROFILE not set — skipping notarization"
+        echo "     Run: xcrun notarytool store-credentials \"myprofile\""
+    fi
+else
+    echo "⚠️  No Developer ID certificate found — skipping code signing"
+    echo "   (Unsigned app will trigger Gatekeeper warning)"
+fi
 
 echo "✅ Build completed successfully!"
 echo "📁 App location: ${DIST_DIR}/${APP_NAME}.app"
