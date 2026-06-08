@@ -127,3 +127,6 @@ __pycache__/
 env/
 venv/
 ENV/
+# local agent + logs
+.claude/
+firebase-debug.log
