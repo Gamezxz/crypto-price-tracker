@@ -273,6 +273,12 @@
     .build-source { margin-top: 26px; font-size: 0.82rem; color: var(--muted); line-height: 1.9; }
     .build-source code { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 0.72rem; background: var(--bg-3); border: 1px solid var(--line); border-radius: 8px; padding: 9px 13px; color: var(--fg-2); max-width: 100%; overflow-x: auto; white-space: nowrap; }
 
+    /* ── Install preview (drag-to-Applications window) ── */
+    .install-preview { max-width: 720px; margin: 0 auto 30px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-2); padding: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.08); }
+    [data-theme="dark"] .install-preview { box-shadow: 0 20px 60px rgba(0,0,0,0.40); }
+    .install-preview img { width: 100%; border-radius: 9px; display: block; }
+    .install-caption { text-align: center; margin: 14px 4px 4px; font-size: 0.84rem; color: var(--muted); }
+
     /* ── Footer ── */
     .footer { border-top: 1px solid var(--line); padding: 28px 0; margin-top: 2rem; }
     .footer .container { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -488,6 +494,10 @@
 <!-- ==================== DOWNLOAD ==================== -->
 <section class="section download-section" id="download">
   <div class="container">
+    <div class="install-preview">
+      <img src="dmg-install.png" alt="Install window: drag Crypto Price Tracker into the Applications folder" loading="lazy">
+      <p class="install-caption">Installing is just a drag &mdash; open the DMG and drop the app into Applications. No installer, no setup.</p>
+    </div>
     <div class="download-card">
       <p class="section-label">Get Started</p>
       <h2 class="section-title">Download Crypto Price Tracker</h2>
