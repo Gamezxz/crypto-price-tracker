@@ -190,13 +190,10 @@ if [ -n "$DEVELOPER_ID" ] && security find-identity -v -p basic 2>/dev/null | gr
     echo "✅ Signature verified:"
     codesign -dvvv "$DIST_DIR/${APP_NAME}.app" 2>&1 | grep -E "Identifier|Authority|Runtime"
 
-    echo "📦 Creating DMG..."
+    echo "📦 Creating DMG (drag-to-Applications layout)..."
     DMG_PATH="$DIST_DIR/Crypto-Price-Tracker.dmg"
     rm -f "$DMG_PATH"
-    hdiutil create -volname "Crypto Price Tracker" \
-        -srcfolder "$DIST_DIR/${APP_NAME}.app" \
-        -ov -format UDZO \
-        "$DMG_PATH" >/dev/null 2>&1
+    "$(dirname "$0")/make_dmg.sh" "$DIST_DIR/${APP_NAME}.app" "$DMG_PATH"
 
     if [ -n "$NOTARIZE_PROFILE" ]; then
         echo "📤 Submitting for notarization..."
